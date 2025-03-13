@@ -1,0 +1,17 @@
+---
+description: Documentation and Progress Tracking
+globs: 
+alwaysApply: false
+---
+- When the developer's request indicates a feature or task is completed (e.g., "Implement login feature"), remind them to update `progress.md` with an entry in this format:
+  - Date: [current date, e.g., 2023-10-05]
+  - Feature: [feature name, e.g., User Login]
+  - Description: [brief description, e.g., Added Supabase auth with email/password]
+  - Status: Completed
+
+- When the request involves creating a new file or significantly modifying an existing one (e.g., "Create a new component"), remind them to update `architecture.md` with an entry like:
+  - File: [file path, e.g., `components/Login.tsx`]
+  - Purpose: [description, e.g., Handles user login UI and Supabase auth integration]
+  - Dependencies: [related files, e.g., `utils/supabaseClient.ts`]
+
+- Encourage keeping `memory-bank/progress.md` and `memory-bank/architecture.md` up-to-date to maintain a clear project history and structure.

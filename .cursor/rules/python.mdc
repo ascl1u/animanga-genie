@@ -1,0 +1,9 @@
+---
+description: Python Development for AI/ML
+globs: **/*.py
+alwaysApply: false
+---
+- Use type hints for function parameters and return types (e.g., `def process_data(data: pd.DataFrame) -> np.ndarray:`).
+- Follow PEP 8 guidelines for code style (e.g., 4-space indentation, 79-character line limit).
+- Use descriptive variable names with snake_case (e.g., `model_weights` instead of `mw`).
+- Document each function with a docstring explaining its purpose and usage:

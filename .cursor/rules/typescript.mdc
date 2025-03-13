@@ -1,0 +1,14 @@
+---
+description: TypeScript and React Development
+globs: **/*.ts, **/*.tsx
+alwaysApply: false
+---
+
+- Use functional components with hooks instead of class components.
+- Prefer `const` over `let` for variable declarations to ensure immutability.
+- Use descriptive variable names with camelCase (e.g., `userProfile` instead of `up`).
+- Follow the Airbnb TypeScript style guide for consistency.
+- Use Next.js server components where appropriate to optimize performance.
+- Ensure all components and functions have explicit TypeScript types (e.g., `interface Props`).
+- Integrate with Supabase using its TypeScript client library for authentication and database operations.
+- Prefer Next.js API routes for server-side logic over external endpoints when possible.

@@ -1,5 +1,9 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+# AnimeManga Genie
+
+A Next.js application that provides personalized anime and manga recommendations based on user preferences.
+
 ## Getting Started
 
 First, run the development server:
@@ -16,9 +20,34 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Environment Setup
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Create a `.env.local` file in the root directory with the following variables:
+
+```
+NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
+NEXT_PUBLIC_SITE_URL=http://localhost:3000
+```
+
+For production, set `NEXT_PUBLIC_SITE_URL` to your production domain.
+
+## Documentation
+
+The following documentation files are available in this repository:
+
+- **[architecture.md](./architecture.md)**: Detailed system architecture including authentication flow, database structure, and component architecture.
+- **[progress.md](./progress.md)**: Implementation progress tracking, completed features, and upcoming work.
+- **[src/utils/README-SUPABASE.md](./src/utils/README-SUPABASE.md)**: Instructions for setting up Supabase, including database schema, authentication, and troubleshooting.
+
+## Features
+
+- User authentication with Supabase Auth
+- Password reset functionality
+- Anime and manga database
+- Personalized recommendations based on user preferences
+- User profile management
+- Watch history tracking
 
 ## Learn More
 

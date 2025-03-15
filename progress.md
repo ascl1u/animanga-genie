@@ -1,4 +1,4 @@
-# AnimeManga Genie - Implementation Progress
+# AniManga Genie - Implementation Progress
 
 ## Project Status: In Development
 

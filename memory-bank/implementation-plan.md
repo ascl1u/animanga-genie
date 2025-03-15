@@ -40,38 +40,63 @@ This plan outlines the development of the Minimum Viable Product (MVP) in small,
 
 ## Phase 2: Frontend Development (Weeks 3-6)
 
-### 5. Build User Registration Page
-- **Task**: Create a registration page with email and password inputs.
+### 1. Build Header Component
+- **Task**: Create a navigation bar with authentication-related components.
   - Add `shadcn/ui` to the project: follow its setup guide to install and configure.
-  - Create `/pages/signup.tsx` using functional components and hooks, with `shadcn/ui` form components.
-  - Call the Supabase auth `signUp` method on form submission.
-- **Test**: Register a new user via the form. Check the Supabase dashboard to confirm the user appears in the `users` table.
+  - Create `/components/Header.tsx` with links to Home, Search, Recommendations (if logged in), Profile (if logged in), and Login/Signup (if not logged in) using functional components and hooks.
+  - Include a user avatar with a dropdown menu (Profile, Logout) when logged in, styled with `shadcn/ui` components.
+  - Use Supabase auth to dynamically update based on login status.
+- **Test**: Load the app as a logged-out user to see Login/Signup links, then log in and confirm Recommendations, Profile, and avatar dropdown appear.
 
-### 6. Build User Profile Setup
-- **Task**: Create a profile page for selecting preferred genres.
-  - Add `/pages/profile.tsx` with a multi-select dropdown of genres (e.g., action, romance) from a static list or the `anime` table.
-  - Save selections to `user_preferences` using the Supabase client as a list of genre names in the `preferred_genres` JSON field.
-- **Test**: Log in as a test user, select three genres, and submit. Verify the `preferred_genres` column in `user_preferences` reflects the choices.
+### 2. Build Home Page
+- **Task**: Design an engaging landing page to grab attention.
+  - Create `/pages/index.tsx` with a colorful anime wallpaper background and a central "Explore Anime" button using `shadcn/ui` button components.
+  - Redirect to `/pages/search.tsx` on button click; optionally, display personalized content (e.g., recent recommendations) for logged-in users using Supabase auth data.
+- **Test**: Load the home page as a logged-out user, click "Explore Anime," and verify redirection to the search page; log in and check for optional personalized content.
 
-### 7. Implement Watch History Input
-- **Task**: Add a form to input watched anime and optional ratings.
-  - Create `/components/WatchHistoryForm.tsx` with a text input for anime titles and a rating field (1-5).
-  - Save entries to `watch_history` in `user_preferences` as a JSON array with these fields: anime_id, rating, watch_status, and watch_date.
-- **Test**: Add two anime entries for a test user. Confirm they are stored correctly in the `user_preferences` table.
+### 3. Build User Registration Page
+- **Task**: Create a registration page with email and password inputs.
+  - Ensure `shadcn/ui` is configured in the project.
+  - Create `/pages/signup.tsx` using functional components and hooks, with `shadcn/ui` form components for email and password fields.
+  - Call the Supabase auth `signUp` method on form submission and redirect to `/pages/profil.tsx` for profile setup.
+- **Test**: Register a new user via the form, confirm redirection to the profile page, and check the Supabase dashboard to verify the user appears in the `users` table.
 
-### 8. Create Recommendation Display Page
-- **Task**: Build a page to show recommended anime.
-  - Add `/pages/recommendations.tsx` with `shadcn/ui` card components to display anime title, synopsis, genres, and rating.
-  - Fetch mock data from a static JSON file for now.
-- **Test**: Load the page and verify that at least three mock anime cards render with all details visible.
+### 4. Build User Login Page
+- **Task**: Create a login page for user authentication.
+  - Create `/pages/login.tsx` using functional components and hooks, with `shadcn/ui` form components for email and password fields.
+  - Call the Supabase auth `signIn` method on form submission and redirect to `/pages/recommendations.tsx` or `/pages/index.tsx`.
+- **Test**: Log in with a test user, confirm redirection to the intended page, and verify the header updates with logged-in components.
 
-### 9. Add Search Functionality
-- **Task**: Implement a search bar to find anime by title.
-  - Add `/components/SearchBar.tsx` with an input field.
-  - Query the `anime` table via Supabase on input change and display results below.
-- **Test**: Search for "Naruto" (assuming it's in the database) and confirm matching titles appear in the results.
+### 5. Build User Profile Page
+- **Task**: Create a profile page for managing preferred genres and watch history.
+  - Create `/pages/profil.tsx` with a multi-select dropdown of genres (e.g., action, romance) fetched from the `anime` table using Supabase, styled with `shadcn/ui`.
+  - Include `/components/WatchHistoryForm.tsx` for adding watch history entries (see task 7).
+  - Save genre selections to a `user_preferences` table in Supabase with a `preferred_genres` column (array of strings), linked by `user_id`.
+- **Test**: Log in as a test user, select three genres, submit, and verify the `preferred_genres` column in `user_preferences` reflects the choices; add a watch history entry and confirm it saves correctly.
 
----
+### 6. Implement Watch History Input
+- **Task**: Add a form to input watched anime with ratings and details.
+  - Create `/components/WatchHistoryForm.tsx` with a search input to select anime titles (querying the `anime` table via Supabase), a rating field (1-5), watch status dropdown (e.g., watched, watching, to watch), and optional watch date, styled with `shadcn/ui`.
+  - Save entries to a separate `watch_history` table in Supabase with fields: `user_id`, `anime_id`, `rating`, `watch_status`, and `watch_date`.
+- **Test**: Add two anime entries for a test user, confirm they are stored correctly in the `watch_history` table with all fields populated.
+
+### 7. Build Recommendation Display Page
+- **Task**: Create a page to display recommended anime.
+  - Create `/pages/recommendations.tsx` with `shadcn/ui` card components to display anime title, synopsis, genres, and rating.
+  - Fetch mock data from a static JSON file initially; plan to replace with Supabase queries based on `user_preferences` and `watch_history`.
+- **Test**: Load the page as a logged-in user, verify at least three mock anime cards render with all details visible, and check responsiveness.
+
+### 8. Build Search Page with Functionality
+- **Task**: Implement a search page to find anime by title.
+  - Create `/pages/search.tsx` and include `/components/SearchBar.tsx` with an input field styled with `shadcn/ui`.
+  - Query the `anime` table via Supabase on input change (with debouncing), displaying results below in `shadcn/ui` card components.
+- **Test**: Search for "Naruto" (assuming it’s in the database), confirm matching titles appear in the results, and verify the search updates dynamically with input.
+
+### 9. Additional Setup and Styling
+- **Task**: Ensure consistency and scalability across the application.
+  - Define a custom `shadcn/ui` theme with an anime-inspired aesthetic (e.g., vibrant colors, sleek typography) in the project configuration.
+  - Use separate Supabase tables (`user_preferences`, `watch_history`) linked by `user_id` for better data management; ensure responsiveness with CSS or Tailwind CSS.
+- **Test**: Load all pages on desktop and mobile, confirm consistent styling and functionality, and verify Supabase tables are correctly structured and populated.
 
 ## Phase 3: AI/ML Development (Weeks 7-10)
 

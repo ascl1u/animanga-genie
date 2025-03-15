@@ -35,9 +35,7 @@ The AI-Powered Anime Recommendation Engine is a personalized platform designed t
    - Shows title, synopsis, genres, and ratings for each recommendation.
    - Options to add to a watchlist or mark as watched.
 5. **Basic Search Functionality**
-   - Search bar to find specific anime titles.
-6. **User Feedback Mechanism**
-   - Like/dislike buttons to improve recommendation accuracy over time.
+   - Search bar to find specific anime titles.W
 
 ### Future Features
 

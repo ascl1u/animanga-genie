@@ -1,6 +1,6 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-# AnimeManga Genie
+# AniManga Genie
 
 A Next.js application that provides personalized anime and manga recommendations based on user preferences.
 

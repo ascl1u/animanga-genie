@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/SimpleAuthProvider';
+import WatchHistoryForm from '@/components/WatchHistoryForm';
 
 export default function ProfilePage() {
   const { user, isLoading, isAuthenticated } = useAuth();
@@ -38,7 +39,7 @@ export default function ProfilePage() {
     return (
       <div className="min-h-screen bg-gray-50 py-12">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="bg-white shadow rounded-lg overflow-hidden">
+          <div className="bg-white shadow rounded-lg overflow-hidden mb-8">
             <div className="px-4 py-5 sm:px-6 bg-indigo-600 text-white">
               <h1 className="text-2xl font-bold">Your Profile</h1>
               <p className="mt-1 text-sm">Manage your account details and preferences</p>
@@ -82,6 +83,9 @@ export default function ProfilePage() {
               </div>
             </div>
           </div>
+          
+          {/* Watch History Form */}
+          <WatchHistoryForm />
         </div>
       </div>
     );

@@ -1,8 +1,8 @@
-# AnimeManga Genie - Architecture Documentation
+# AniManga Genie - Architecture Documentation
 
 ## Overview
 
-AnimeManga Genie is a Next.js-based application that provides users with anime and manga recommendations based on their preferences. The application uses Supabase for authentication, database storage, and real-time features.
+AniManga Genie is a Next.js-based application that provides users with anime and manga recommendations based on their preferences. The application uses Supabase for authentication, database storage, and real-time features.
 
 ## Tech Stack
 
@@ -82,10 +82,43 @@ The application uses the following main tables:
 2. **ClientNavigation**: Client-side navigation component
    - Adapts based on authentication state
    - Prevents hydration errors using client-side mounting detection
+   - Provides links to all main pages including search, recommendations, and feedback
 
 3. **Layout Components**: Structured layout components for consistent UI
    - Includes headers, footers, and main content areas
    - Responsive design with Tailwind CSS
+
+4. **SearchBar**: Reusable search component
+   - Provides debounced input for efficient API calls
+   - Used in search pages and other search interfaces
+
+5. **WatchHistoryForm**: Form component for adding anime to watch history
+   - Allows users to input anime titles, ratings, watch status, and dates
+   - Integrates with Supabase for data storage
+
+### Pages
+
+1. **Home Page** (`/src/app/page.tsx`): Landing page with feature highlights
+   - Provides an appealing introduction to the application
+   - Links to key functionality like search and sign-up
+
+2. **Search Page** (`/src/app/search/page.tsx`): Interface for searching anime
+   - Uses the SearchBar component
+   - Will display search results with details
+
+3. **Recommendations Page** (`/src/app/recommendations/page.tsx`): Displays personalized recommendations
+   - Shows anime recommendations based on user preferences
+   - Includes feedback mechanisms (like/dislike)
+
+4. **Profile Page** (`/src/app/profile/page.tsx`): User profile management
+   - Displays user information
+   - Allows preference management
+   - Includes watch history form for tracking anime
+
+5. **Authentication Pages**:
+   - Signup (`/src/app/signup/page.tsx`): User registration
+   - Login (`/src/app/login/page.tsx`): User authentication
+   - Reset Password (`/src/app/reset-password/page.tsx`): Password recovery
 
 ### API Routes
 

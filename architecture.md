@@ -10,6 +10,7 @@ AniManga Genie is a Next.js-based application that provides users with anime and
 - **Backend**: Next.js API routes, Supabase
 - **Database**: PostgreSQL (via Supabase)
 - **Authentication**: Supabase Auth with PKCE flow
+- **External APIs**: AniList GraphQL API for anime data
 - **Styling**: Tailwind CSS with custom components
 - **Deployment**: Vercel (recommended)
 
@@ -53,10 +54,24 @@ The application uses the following main tables:
 
 2. **user_preferences**: Stores user preferences for recommendations
    - Linked to users table via user_id
-   - Contains preferred genres and watch history
+   - Contains preferred genres and watch history (legacy JSON field)
 
-3. **anime**: Stores anime information for recommendations
+3. **anime_watch_history**: Normalized table for tracking user's anime watch history
+   - Linked to users table via user_id
+   - Contains details for each anime including anilist_id, title, rating, and cover image
+   - Has unique constraint on user_id and anilist_id to prevent duplicates
+   - Includes Row Level Security to ensure users can only access their own data
+
+4. **anime**: Stores anime information for recommendations
    - Contains details like title, synopsis, genres, and rating
+
+### External APIs Integration
+
+1. **AniList GraphQL API**:
+   - Provides comprehensive anime data including titles, cover images, and metadata
+   - Implemented via Apollo Client for efficient GraphQL queries
+   - Used for search functionality in the watch history feature
+   - Supports rich anime search with images and details
 
 ### Security Implementation
 
@@ -71,6 +86,11 @@ The application uses the following main tables:
    - Password reset with time-limited tokens
    - Environment variable protection for API keys
 
+3. **External Resource Security**:
+   - Image domain validation for cover images
+   - Only allows trusted domains like anilist.co and kitsu.io
+   - Configured in Next.js image configuration
+
 ## Component Architecture
 
 ### Core Components
@@ -79,73 +99,101 @@ The application uses the following main tables:
    - Provides user and session information to all components
    - Handles synchronization between user and session states
 
-2. **ClientNavigation**: Client-side navigation component
+2. **ClientNavigation**: Client-side navigation component with modern dropdown UI
    - Adapts based on authentication state
    - Prevents hydration errors using client-side mounting detection
-   - Provides links to all main pages including search, recommendations, and feedback
+   - Features user avatar with dropdown menu for authenticated users
+   - Provides links to search, recommendations, and profile
+   - Implements clean, accessible dropdown menu with icons and transitions
 
-3. **Layout Components**: Structured layout components for consistent UI
-   - Includes headers, footers, and main content areas
-   - Responsive design with Tailwind CSS
+3. **AnimeSearch**: Reusable anime search component
+   - Connects to AniList GraphQL API for real-time search
+   - Features debounced input to prevent excessive API calls
+   - Displays search results with cover images and metadata
+   - Provides keyboard navigation and accessibility features
+   - Handles image loading errors gracefully
 
-4. **SearchBar**: Reusable search component
-   - Provides debounced input for efficient API calls
-   - Used in search pages and other search interfaces
+4. **WatchHistoryForm**: Form component for adding anime to watch history
+   - Integrates with AnimeSearch component for finding anime
+   - Allows users to rate anime on a 1-10 scale
+   - Validates data before submission
+   - Handles error states and loading states
 
-5. **WatchHistoryForm**: Form component for adding anime to watch history
-   - Allows users to input anime titles, ratings, watch status, and dates
-   - Integrates with Supabase for data storage
+5. **WatchHistoryList**: Component for displaying user's anime watch history
+   - Shows anime with cover images, titles, and ratings
+   - Supports editing ratings and deleting entries
+   - Updates in real-time using Supabase's real-time subscriptions
+   - Implements optimistic UI updates for a responsive experience
+
+### Services
+
+1. **watchHistoryService**: Service for interacting with watch history data
+   - Provides functions for adding, updating, retrieving, and deleting watch history entries
+   - Handles authentication validation
+   - Interfaces with Supabase for database operations
+   - Includes error handling and logging
+
+2. **anilistClient**: Service for interacting with AniList GraphQL API
+   - Configured Apollo Client for GraphQL queries
+   - Provides type-safe interfaces for anime data
+   - Includes error handling and fallback mechanisms
 
 ### Pages
 
-1. **Home Page** (`/src/app/page.tsx`): Landing page with feature highlights
-   - Provides an appealing introduction to the application
-   - Links to key functionality like search and sign-up
+1. **Home Page** (`/src/app/page.tsx`): Modern landing page with feature highlights
+   - Full-screen background image with gradient overlay
+   - Clear value proposition and call-to-action
+   - Feature cards with hover effects and backdrop blur
+   - Responsive grid layout for feature presentation
+   - Optimized image loading with Next.js Image component
+   - Consistent typography and spacing
+   - Modern UI elements with transitions and animations
 
-2. **Search Page** (`/src/app/search/page.tsx`): Interface for searching anime
+2. **My Anime Page** (`/src/app/my-anime/page.tsx`): Comprehensive anime tracking interface
+   - Protected route requiring authentication
+   - Includes WatchHistoryForm for adding new anime
+   - Displays WatchHistoryList for viewing and managing watch history
+   - Responsive layout for both desktop and mobile
+   - Real-time updates via Supabase subscriptions
+   - Client-side navigation with authentication checks
+
+3. **Search Page** (`/src/app/search/page.tsx`): Interface for searching anime
    - Uses the SearchBar component
    - Will display search results with details
 
-3. **Recommendations Page** (`/src/app/recommendations/page.tsx`): Displays personalized recommendations
+4. **Recommendations Page** (`/src/app/recommendations/page.tsx`): Displays personalized recommendations
    - Shows anime recommendations based on user preferences
    - Includes feedback mechanisms (like/dislike)
 
-4. **Profile Page** (`/src/app/profile/page.tsx`): User profile management
+5. **Profile Page** (`/src/app/profile/page.tsx`): User profile management
    - Displays user information
    - Allows preference management
    - Includes watch history form for tracking anime
 
-5. **Authentication Pages**:
+6. **Authentication Pages**:
    - Signup (`/src/app/signup/page.tsx`): User registration
    - Login (`/src/app/login/page.tsx`): User authentication
    - Reset Password (`/src/app/reset-password/page.tsx`): Password recovery
 
-### API Routes
-
-1. **/api/auth**: Handles various authentication operations
-   - Sign-up, login, password reset requests
-   - Token validation and session management
-
-2. **/api/auth/update-password**: Server-side password update endpoint
-   - Handles authenticated password changes
-   - Provides error handling and validation
-
-3. **/api/recommendations**: Anime recommendation engine
-   - Processes user preferences to generate recommendations
-   - Interfaces with the database for anime information
-
-4. **/auth/callback**: Authentication callback handler
-   - Processes OAuth redirects from Supabase
-   - Creates user records in application tables
-   - Fallback mechanism for user creation
-
 ## Data Flow
 
-1. User interacts with the UI components
-2. Actions trigger API calls to Next.js API routes
-3. API routes communicate with Supabase services
-4. Data is processed and returned to the UI
-5. UI updates to reflect the new state
+1. **Anime Search and Selection**:
+   - User inputs search query in AnimeSearch component
+   - Component makes debounced API calls to AniList GraphQL API
+   - Results display with images and metadata
+   - User selects anime which is passed to parent component
+
+2. **Watch History Management**:
+   - User adds anime via WatchHistoryForm
+   - Data is sent to watchHistoryService
+   - Service stores data in anime_watch_history table via Supabase
+   - Real-time subscription in WatchHistoryList updates the UI
+   - User can edit ratings or delete entries with immediate UI feedback
+
+3. **Authentication Flow**:
+   - Auth state managed by AuthProvider
+   - Protected routes like My Anime check authentication
+   - Unauthenticated users redirected to login
 
 ## Environment Configuration
 
@@ -155,4 +203,6 @@ The application requires the following environment variables:
 NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
 NEXT_PUBLIC_SITE_URL=your-site-url (e.g., http://localhost:3000 for local development)
+ANILIST_CLIENT_ID=your-anilist-client-id
+ANILIST_CLIENT_SECRET=your-anilist-client-secret
 ``` 

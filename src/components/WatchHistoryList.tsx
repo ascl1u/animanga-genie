@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react';
 import Image from 'next/image';
 import { useAuth } from '@/components/SimpleAuthProvider';
 import { toast } from 'react-hot-toast';
@@ -8,7 +8,11 @@ import { createClient } from '@/utils/supabase/client';
 import { AnimeWatchHistoryItem } from '@/types/watchHistory';
 import { getUserWatchHistory, updateWatchHistoryRating, deleteWatchHistoryItem } from '@/services/watchHistoryService';
 
-export default function WatchHistoryList() {
+export interface WatchHistoryListRef {
+  addAnime?: (anime: AnimeWatchHistoryItem) => void;
+}
+
+const WatchHistoryList = forwardRef<WatchHistoryListRef>((props, ref) => {
   const { user } = useAuth();
   const [watchHistory, setWatchHistory] = useState<AnimeWatchHistoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -18,6 +22,16 @@ export default function WatchHistoryList() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [isDeleting, setIsDeleting] = useState<Record<string, boolean>>({});
   const supabase = createClient();
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+
+  // Expose methods to parent components through the ref
+  useImperativeHandle(ref, () => ({
+    // Method to manually add an anime to the watch history list
+    addAnime: (anime: AnimeWatchHistoryItem) => {
+      console.log('Manually adding anime to watch history list:', anime);
+      setWatchHistory(prev => [anime, ...prev]);
+    }
+  }));
 
   const fetchWatchHistory = useCallback(async () => {
     if (!user) return;
@@ -38,28 +52,83 @@ export default function WatchHistoryList() {
     }
   }, [user]);
 
+  // Improved real-time subscription setup
   useEffect(() => {
+    if (!user) return;
+    
+    // Only set up subscription if we have a user
+    const setupRealtimeSubscription = () => {
+      // Clean up any existing subscription
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+      }
+      
+      // Set up a new subscription
+      channelRef.current = supabase
+        .channel('anime_watch_history_changes')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'anime_watch_history',
+            filter: `user_id=eq.${user.id}`,
+          },
+          (payload) => {
+            console.log('Real-time update received:', payload);
+            
+            // Handle different types of changes
+            if (payload.eventType === 'INSERT') {
+              // Add new item to the list
+              const newItem = payload.new as AnimeWatchHistoryItem;
+              setWatchHistory(prev => {
+                // Check if the item is already in the list (to avoid duplicates)
+                if (prev.some(item => item.id === newItem.id)) {
+                  return prev;
+                }
+                return [newItem, ...prev];
+              });
+              toast.success('New anime added to your watch history');
+            } 
+            else if (payload.eventType === 'DELETE') {
+              // Remove deleted item from the list
+              const deletedItem = payload.old as AnimeWatchHistoryItem;
+              setWatchHistory(prev => 
+                prev.filter(item => item.id !== deletedItem.id)
+              );
+            }
+            else if (payload.eventType === 'UPDATE') {
+              // Update the modified item in the list
+              const updatedItem = payload.new as AnimeWatchHistoryItem;
+              setWatchHistory(prev => 
+                prev.map(item => 
+                  item.id === updatedItem.id ? updatedItem : item
+                )
+              );
+            }
+          }
+        )
+        .subscribe((status) => {
+          console.log('Subscription status:', status);
+          if (status !== 'SUBSCRIBED') {
+            // If subscription fails, fall back to polling
+            fetchWatchHistory();
+          }
+        });
+    };
+
+    // Initial data fetch
     fetchWatchHistory();
     
     // Set up real-time subscription
-    const channel = supabase
-      .channel('anime_watch_history_changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'anime_watch_history',
-          filter: `user_id=eq.${user?.id}`,
-        },
-        () => {
-          fetchWatchHistory();
-        }
-      )
-      .subscribe();
+    setupRealtimeSubscription();
 
+    // Clean up subscription when component unmounts or user changes
     return () => {
-      supabase.removeChannel(channel);
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
     };
   }, [user, supabase, fetchWatchHistory]);
 
@@ -73,13 +142,55 @@ export default function WatchHistoryList() {
     setEditRating(0);
   };
 
+  // Optimistic UI update for deletion
+  const handleDelete = async (id: string) => {
+    // Optimistically remove the item from the UI first
+    const itemToDelete = watchHistory.find(item => item.id === id);
+    if (!itemToDelete) return;
+    
+    // Save the current state for rollback if needed
+    const previousWatchHistory = [...watchHistory];
+    
+    // Update UI immediately
+    setWatchHistory(prev => prev.filter(item => item.id !== id));
+    
+    // Mark as deleting
+    setIsDeleting(prev => ({ ...prev, [id]: true }));
+    
+    try {
+      // Actually delete from database
+      await deleteWatchHistoryItem(id);
+      toast.success('Removed from watch history');
+    } catch (error) {
+      console.error('Error deleting watch history item:', error);
+      toast.error('Failed to remove from watch history');
+      
+      // Rollback on error
+      setWatchHistory(previousWatchHistory);
+    } finally {
+      setIsDeleting(prev => ({ ...prev, [id]: false }));
+    }
+  };
+
+  // Optimistic UI update for rating changes
   const saveRating = async (id: string) => {
     if (editRating < 1 || editRating > 10) {
       toast.error('Rating must be between 1 and 10');
       return;
     }
 
+    // Save the current state for rollback if needed
+    const previousWatchHistory = [...watchHistory];
+    
+    // Update UI immediately
+    setWatchHistory(prev => 
+      prev.map(item => 
+        item.id === id ? { ...item, rating: editRating } : item
+      )
+    );
+    
     setIsUpdating(true);
+    
     try {
       await updateWatchHistoryRating({ id, rating: editRating });
       toast.success('Rating updated successfully');
@@ -87,23 +198,11 @@ export default function WatchHistoryList() {
     } catch (error) {
       console.error('Error updating rating:', error);
       toast.error('Failed to update rating');
+      
+      // Rollback on error
+      setWatchHistory(previousWatchHistory);
     } finally {
       setIsUpdating(false);
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    setIsDeleting(prev => ({ ...prev, [id]: true }));
-    try {
-      await deleteWatchHistoryItem(id);
-      // We don't need to manually update the watchHistory array
-      // since the realtime subscription will handle that
-      toast.success('Removed from watch history');
-    } catch (error) {
-      console.error('Error deleting watch history item:', error);
-      toast.error('Failed to remove from watch history');
-    } finally {
-      setIsDeleting(prev => ({ ...prev, [id]: false }));
     }
   };
 
@@ -126,8 +225,8 @@ export default function WatchHistoryList() {
   if (watchHistory.length === 0) {
     return (
       <div className="bg-gray-50 rounded-lg p-8 text-center">
-        <h3 className="font-medium text-gray-500">No anime in your watch history yet</h3>
-        <p className="mt-2 text-sm text-gray-400">
+        <h3 className="font-medium text-gray-700">No anime in your watch history yet</h3>
+        <p className="mt-2 text-sm text-gray-600">
           Add anime to your watch history using the form above.
         </p>
       </div>
@@ -136,7 +235,7 @@ export default function WatchHistoryList() {
 
   return (
     <div className="mt-8">
-      <h2 className="text-xl font-semibold mb-4">Your Watch History</h2>
+      <h2 className="text-xl font-semibold mb-4 text-gray-900">Your Watch History</h2>
       
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {watchHistory.map((item) => (
@@ -162,7 +261,7 @@ export default function WatchHistoryList() {
                 </div>
               ) : (
                 <div className="flex-shrink-0 h-20 w-14 mr-4 bg-gray-200 rounded-sm flex items-center justify-center">
-                  <span className="text-xs text-gray-500">No image</span>
+                  <span className="text-xs text-gray-700">No image</span>
                 </div>
               )}
               
@@ -177,7 +276,7 @@ export default function WatchHistoryList() {
                           key={star}
                           type="button"
                           onClick={() => setEditRating(star)}
-                          className={`text-sm ${star <= editRating ? 'text-yellow-500' : 'text-gray-300'} hover:text-yellow-400 transition-colors`}
+                          className={`text-sm ${star <= editRating ? 'text-yellow-500' : 'text-gray-400'} hover:text-yellow-400 transition-colors`}
                           aria-label={`Rate ${star} out of 10`}
                         >
                           {star}
@@ -187,12 +286,12 @@ export default function WatchHistoryList() {
                   ) : (
                     <div className="flex items-center">
                       <span className="text-yellow-500 mr-1">★</span>
-                      <span className="text-sm font-medium">{item.rating}/10</span>
+                      <span className="text-sm font-semibold text-gray-800">{item.rating}/10</span>
                     </div>
                   )}
                   
                   {!editItemId && (
-                    <div className="ml-4 text-xs text-gray-500">
+                    <div className="ml-4 text-xs text-gray-700">
                       {new Date(item.created_at).toLocaleDateString()}
                     </div>
                   )}
@@ -205,7 +304,7 @@ export default function WatchHistoryList() {
                 <>
                   <button
                     onClick={cancelEdit}
-                    className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700"
+                    className="px-2 py-1 text-xs text-gray-700 hover:text-gray-900"
                     disabled={isUpdating}
                   >
                     Cancel
@@ -241,4 +340,9 @@ export default function WatchHistoryList() {
       </div>
     </div>
   );
-} 
+})
+
+// Display name for debugging purposes
+WatchHistoryList.displayName = 'WatchHistoryList';
+
+export default WatchHistoryList; 

@@ -5,10 +5,14 @@ import { useAuth } from '@/components/SimpleAuthProvider';
 import AnimeSearch from './AnimeSearch';
 import { toast } from 'react-hot-toast';
 import { type AnimeSearchResult } from '@/utils/anilistClient';
-import { WatchHistoryFormData } from '@/types/watchHistory';
+import { WatchHistoryFormData, AnimeWatchHistoryItem } from '@/types/watchHistory';
 import { addToWatchHistory } from '@/services/watchHistoryService';
 
-export default function WatchHistoryForm() {
+interface WatchHistoryFormProps {
+  onAnimeAdded?: (anime: AnimeWatchHistoryItem) => void;
+}
+
+export default function WatchHistoryForm({ onAnimeAdded }: WatchHistoryFormProps) {
   const { user } = useAuth();
   const [selectedAnime, setSelectedAnime] = useState<AnimeSearchResult | null>(null);
   const [rating, setRating] = useState<number>(0);
@@ -53,9 +57,14 @@ export default function WatchHistoryForm() {
       };
       
       // Call our service to add the anime to watch history
-      await addToWatchHistory(formData);
+      const addedAnime = await addToWatchHistory(formData);
       
       toast.success('Added to watch history!');
+      
+      // Call the callback function if provided
+      if (onAnimeAdded) {
+        onAnimeAdded(addedAnime);
+      }
       
       // Reset form
       setSelectedAnime(null);
@@ -72,11 +81,11 @@ export default function WatchHistoryForm() {
 
   return (
     <div className="bg-white rounded-lg shadow p-6">
-      <h2 className="text-xl font-semibold mb-4">Add to Watch History</h2>
+      <h2 className="text-xl font-semibold text-gray-900 mb-4">Add to Watch History</h2>
       
       <form onSubmit={handleSubmit}>
         <div className="mb-4">
-          <label htmlFor="animeTitle" className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="animeTitle" className="block text-sm font-medium text-gray-800 mb-2">
             Anime Title
           </label>
           <AnimeSearch 
@@ -85,8 +94,8 @@ export default function WatchHistoryForm() {
           />
           {selectedAnime && (
             <div className="mt-2 flex items-center">
-              <span className="text-sm text-gray-600">Selected: </span>
-              <span className="ml-1 text-sm font-medium text-indigo-600">
+              <span className="text-sm text-gray-700">Selected: </span>
+              <span className="ml-1 text-sm font-medium text-indigo-700">
                 {selectedAnime.title.english || selectedAnime.title.romaji}
               </span>
             </div>
@@ -94,7 +103,7 @@ export default function WatchHistoryForm() {
         </div>
         
         <div className="mb-6">
-          <label htmlFor="rating" className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="rating" className="block text-sm font-medium text-gray-800 mb-2">
             Rating (1-10)
           </label>
           <div className="flex items-center space-x-1">
@@ -103,14 +112,14 @@ export default function WatchHistoryForm() {
                 key={star}
                 type="button"
                 onClick={() => setRating(star)}
-                className={`text-xl ${star <= rating ? 'text-yellow-500' : 'text-gray-300'} hover:text-yellow-400 transition-colors`}
+                className={`text-xl ${star <= rating ? 'text-yellow-500' : 'text-gray-400'} hover:text-yellow-400 transition-colors`}
                 aria-label={`Rate ${star} out of 10`}
               >
                 {star}
               </button>
             ))}
           </div>
-          <div className="mt-1 text-sm text-gray-500">
+          <div className="mt-1 text-sm text-gray-700">
             {rating > 0 ? `Your rating: ${rating}/10` : 'Select a rating'}
           </div>
         </div>

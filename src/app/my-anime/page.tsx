@@ -1,16 +1,19 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/SimpleAuthProvider';
 import WatchHistoryForm from '@/components/WatchHistoryForm';
 import WatchHistoryList from '@/components/WatchHistoryList';
+import WatchHistoryImport from '@/components/WatchHistoryImport';
 import Link from 'next/link';
+import { AnimeWatchHistoryItem } from '@/types/watchHistory';
 
 export default function MyAnimePage() {
   const { user, isLoading, isAuthenticated } = useAuth();
   const [mounted, setMounted] = useState(false);
   const router = useRouter();
+  const watchHistoryListRef = useRef<{ addAnime?: (anime: AnimeWatchHistoryItem) => void }>({}); 
   
   // Client-side only code
   useEffect(() => {
@@ -23,6 +26,14 @@ export default function MyAnimePage() {
       router.push('/login');
     }
   }, [mounted, isLoading, isAuthenticated, router]);
+
+  // Handler for when anime is added via the form
+  const handleAnimeAdded = (anime: AnimeWatchHistoryItem) => {
+    // If the WatchHistoryList component has exposed an addAnime method, call it
+    if (watchHistoryListRef.current && watchHistoryListRef.current.addAnime) {
+      watchHistoryListRef.current.addAnime(anime);
+    }
+  };
   
   // Show loading state
   if (isLoading || !mounted) {
@@ -44,7 +55,7 @@ export default function MyAnimePage() {
           <div className="flex items-center justify-between mb-8">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">My Anime</h1>
-              <p className="mt-1 text-sm text-gray-500">
+              <p className="mt-1 text-sm text-gray-700">
                 Track your anime watch history and ratings
               </p>
             </div>
@@ -56,11 +67,14 @@ export default function MyAnimePage() {
             </Link>
           </div>
           
+          {/* Import Options */}
+          <WatchHistoryImport />
+          
           {/* Watch History Form */}
-          <WatchHistoryForm />
+          <WatchHistoryForm onAnimeAdded={handleAnimeAdded} />
           
           {/* Watch History List */}
-          <WatchHistoryList />
+          <WatchHistoryList ref={watchHistoryListRef} />
         </div>
       </div>
     );

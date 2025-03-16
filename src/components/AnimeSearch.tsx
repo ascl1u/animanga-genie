@@ -77,7 +77,7 @@ export default function AnimeSearch({ onSelect, placeholder = "Search for an ani
           setIsOpen(true);
         }}
         onFocus={() => setIsOpen(true)}
-        className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        className="w-full p-2 border border-gray-300 rounded-md text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
         placeholder={placeholder}
       />
       

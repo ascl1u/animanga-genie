@@ -6,6 +6,7 @@ import { AnimeWatchHistoryItem } from '@/types/watchHistory';
 import { createClient } from '@/utils/supabase/client';
 import { getUserWatchHistory, WATCH_HISTORY_CHANGED_EVENT } from '@/services/watchHistoryService';
 import { collaborativeFilteringService } from '@/services/collaborativeFilteringService';
+import { saveRecommendations, loadRecommendations } from '@/services/recommendationPersistenceService';
 
 interface UseRecommendationsOptions {
   userId?: string;
@@ -200,8 +201,15 @@ export function useRecommendations({
           setWatchHistoryLoaded(true);
           
           // Update the watch history hash and mark as unchanged
-          setWatchHistoryHash(createWatchHistoryHash(newHistory));
+          const newHash = createWatchHistoryHash(newHistory);
+          setWatchHistoryHash(newHash);
           setWatchHistoryChanged(false);
+          
+          // Save recommendations to Supabase
+          if (result.recommendations.length > 0) {
+            debugLog('Saving recommendations to database');
+            saveRecommendations(result.recommendations, newHash);
+          }
         }
         
         // Log any debug info
@@ -244,7 +252,7 @@ export function useRecommendations({
         isInitialized: true,
       }));
     }
-  }, [getUserId, isModelLoaded, limit, loadModel, preferredGenres, preferredTags, status.isInitialized, watchHistory, watchHistoryChanged, watchHistoryHash]);
+  }, [getUserId, isModelLoaded, limit, loadModel, preferredGenres, preferredTags, status.isInitialized, watchHistory, watchHistoryChanged]);
 
   // Effect to auto-load if specified
   useEffect(() => {
@@ -274,6 +282,38 @@ export function useRecommendations({
       window.removeEventListener(WATCH_HISTORY_CHANGED_EVENT, handleWatchHistoryChange);
     };
   }, [fetchWatchHistory, watchHistoryLoaded]);
+  
+  // Effect to load saved recommendations when watch history is loaded
+  useEffect(() => {
+    // Function to load saved recommendations if available
+    const loadSavedRecommendations = async () => {
+      if (watchHistoryLoaded && watchHistoryHash && !status.isInitialized && !status.isLoading) {
+        debugLog('Attempting to load saved recommendations');
+        const savedRecommendations = await loadRecommendations(watchHistoryHash);
+        
+        if (savedRecommendations && savedRecommendations.length > 0) {
+          debugLog(`Loaded ${savedRecommendations.length} saved recommendations`);
+          setRecommendations(savedRecommendations);
+          setStatus(prev => ({
+            ...prev,
+            isInitialized: true,
+            isError: false,
+            errorMessage: '',
+          }));
+          // Mark watch history as unchanged since we just loaded matching recommendations
+          setWatchHistoryChanged(false);
+        } else if (autoLoad) {
+          // If no saved recommendations and autoLoad is true, generate new ones
+          debugLog('No saved recommendations found - generating new recommendations');
+          fetchRecommendations();
+        }
+      }
+    };
+    
+    if (watchHistoryLoaded && !status.isInitialized && !status.isLoading) {
+      loadSavedRecommendations();
+    }
+  }, [autoLoad, fetchRecommendations, status.isInitialized, status.isLoading, watchHistoryHash, watchHistoryLoaded]);
 
   return {
     recommendations,

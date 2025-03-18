@@ -298,6 +298,17 @@ export default function RecommendationsPage() {
         </div>
       )}
       
+      {!isLoading && isInitialized && (
+        <div className="p-3 bg-green-50 border border-green-200 text-green-700 rounded w-full mb-4">
+          <p className="font-medium flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Recommendations loaded from your saved preferences
+          </p>
+        </div>
+      )}
+      
       {recommendations.length > 0 && !isLoading && !isError && (
         <>
           <div className="mb-6">

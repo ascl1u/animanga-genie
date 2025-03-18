@@ -1,0 +1,32 @@
+{
+  "n_users": 758,
+  "n_anime": 4040,
+  "n_genres": 19,
+  "n_tags": 100,
+  "user_embedding_dim": 64,
+  "anime_embedding_dim": 128,
+  "genre_embedding_dim": 32,
+  "tag_embedding_dim": 32,
+  "dense_layers": [
+    256,
+    128,
+    64,
+    32
+  ],
+  "max_genres": 10,
+  "max_tags": 20,
+  "model_type": "onnx",
+  "rating_normalization": {
+    "mean": 1.2183605375451658,
+    "std": 1.8302503946153121
+  },
+  "input_names": [
+    "user_idx",
+    "anime_idx",
+    "genre_indices",
+    "tag_indices"
+  ],
+  "output_names": [
+    "rating"
+  ]
+}

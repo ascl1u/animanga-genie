@@ -1,59 +1,315 @@
-import { Metadata } from 'next';
+'use client';
 
-export const metadata: Metadata = {
-  title: 'Recommendations - AniManga Genie',
-  description: 'Your personalized anime and manga recommendations',
-};
+import { useRecommendations } from '@/hooks/useRecommendations';
+import RecommendationCard from '@/components/RecommendationCard';
+import { useState } from 'react';
+import { useModelContext } from '@/context/ModelContext';
+import type { MouseEvent } from 'react';
 
 export default function RecommendationsPage() {
+  const { isModelLoaded, isModelLoading } = useModelContext();
+  const {
+    recommendations,
+    watchHistory,
+    isLoading,
+    isError,
+    errorMessage,
+    generateRecommendations,
+    refreshRecommendations,
+    isInitialized,
+    hasWatchHistory,
+    isWatchHistoryLoaded,
+    loadAttempts,
+    modelLoadingProgress
+  } = useRecommendations();
+
+  const [feedback, setFeedback] = useState<Record<number, 'like' | 'dislike' | null>>({});
+  // New state for debug mode
+  const [showDebug, setShowDebug] = useState(false);
+  // State for test limit
+  const [testLimit, setTestLimit] = useState(3);
+
+  const handleLike = (animeId: number) => {
+    setFeedback(prev => ({
+      ...prev,
+      [animeId]: 'like'
+    }));
+    // Here you would also send the feedback to your backend
+    console.log(`Liked anime ${animeId}`);
+  };
+
+  const handleDislike = (animeId: number) => {
+    setFeedback(prev => ({
+      ...prev,
+      [animeId]: 'dislike'
+    }));
+    // Here you would also send the feedback to your backend
+    console.log(`Disliked anime ${animeId}`);
+  };
+
+  const handleMoreInfo = (animeId: number) => {
+    // Implementation for showing more info about the anime
+    console.log(`Show more info for anime ${animeId}`);
+  };
+
+  // Generate test recommendations with limited count
+  const handleTestRecommendations = (e: MouseEvent) => {
+    e.preventDefault();
+    // Call the hook with limited count
+    console.log(`Generating test recommendations with limit: ${testLimit}`);
+    generateRecommendations(testLimit);
+  };
+
+  // Handle normal recommendation generation
+  const handleGenerateRecommendations = (e: MouseEvent) => {
+    e.preventDefault();
+    generateRecommendations();
+  };
+  
+  // Handle retry
+  const handleRetry = (e: MouseEvent) => {
+    e.preventDefault();
+    refreshRecommendations();
+  };
+
   return (
     <div className="container mx-auto py-8 px-4">
       <h1 className="text-3xl font-bold mb-6">Your Recommendations</h1>
       
-      <div className="bg-white rounded-lg shadow p-6 mb-6">
-        <p className="text-gray-600">
-          These recommendations are personalized based on your preferences and watch history.
-          The more anime you rate, the better your recommendations will become!
-        </p>
+      {/* Debug Toggle */}
+      <div className="mb-4 flex justify-end">
+        <button
+          onClick={() => setShowDebug(!showDebug)}
+          className="px-3 py-1 bg-gray-200 text-gray-800 rounded-md text-sm hover:bg-gray-300"
+        >
+          {showDebug ? 'Hide Debug' : 'Show Debug'}
+        </button>
       </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {/* Sample recommendation card - will be replaced with dynamic content */}
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <div className="h-48 bg-gray-200"></div>
-          <div className="p-4">
-            <h3 className="text-lg font-semibold mb-2">Anime Title</h3>
-            <div className="flex items-center mb-2">
-              <span className="text-yellow-500 mr-1">★</span>
-              <span className="text-gray-700">4.5</span>
+      {/* Debug info panel */}
+      {showDebug && (
+        <div className="bg-gray-100 rounded-lg shadow p-4 mb-6 text-xs font-mono overflow-auto max-h-80">
+          <h3 className="font-bold mb-2">Debug Information:</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p><strong>Model Loaded:</strong> {isModelLoaded ? 'Yes' : 'No'}</p>
+              <p><strong>Model Loading:</strong> {isModelLoading ? 'Yes' : 'No'}</p>
+              <p><strong>Status:</strong> {isLoading ? 'Loading' : isError ? 'Error' : isInitialized ? 'Ready' : 'Not Initialized'}</p>
+              <p><strong>Watch History Items:</strong> {watchHistory.length}</p>
+              <p><strong>Load Attempts:</strong> {loadAttempts}</p>
+              <p><strong>Recommendations:</strong> {recommendations.length}</p>
             </div>
-            <p className="text-gray-600 text-sm mb-3">
-              This is a placeholder for the anime synopsis. It will be replaced with actual data.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <span className="bg-indigo-100 text-indigo-800 text-xs px-2 py-1 rounded">Action</span>
-              <span className="bg-indigo-100 text-indigo-800 text-xs px-2 py-1 rounded">Adventure</span>
-            </div>
-          </div>
-          <div className="bg-gray-50 px-4 py-3 flex justify-between">
-            <button className="text-indigo-600 hover:text-indigo-800">
-              More Info
-            </button>
-            <div className="flex space-x-2">
-              <button className="text-green-600 hover:text-green-800" aria-label="Like">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6.633 10.5c.806 0 1.533-.446 2.031-1.08a9.041 9.041 0 012.861-2.4c.723-.384 1.35-.956 1.653-1.715a4.498 4.498 0 00.322-1.672V3a.75.75 0 01.75-.75A2.25 2.25 0 0116.5 4.5c0 1.152-.26 2.243-.723 3.218-.266.558.107 1.282.725 1.282h3.126c1.026 0 1.945.694 2.054 1.715.045.422.068.85.068 1.285a11.95 11.95 0 01-2.649 7.521c-.388.482-.987.729-1.605.729H13.48c-.483 0-.964-.078-1.423-.23l-3.114-1.04a4.501 4.501 0 00-1.423-.23H5.904M14.25 9h2.25M5.904 18.75c.083.205.173.405.27.602.197.4-.078.898-.523.898h-.908c-.889 0-1.713-.518-1.972-1.368a12 12 0 01-.521-3.507c0-1.553.295-3.036.831-4.398C3.387 10.203 4.167 9.75 5 9.75h1.053c.472 0 .745.556.5.96a8.958 8.958 0 00-1.302 4.665c0 1.194.232 2.333.654 3.375z" />
-                </svg>
-              </button>
-              <button className="text-red-600 hover:text-red-800" aria-label="Dislike">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 15h2.25m8.024-9.75c.011.05.028.1.052.148.591 1.2.924 2.55.924 3.977a8.96 8.96 0 01-.999 4.125m.023-8.25c-.076-.365.183-.75.575-.75h.908c.889 0 1.713.518 1.972 1.368.339 1.11.521 2.287.521 3.507 0 1.553-.295 3.036-.831 4.398C18.613 14.547 17.833 15 17 15h-1.053c-.472 0-.745-.556-.5-.96a8.95 8.95 0 00.303-.54m.023-8.25H16.48a4.5 4.5 0 01-1.423-.23l-3.114-1.04a4.5 4.5 0 00-1.423-.23H6.504c-.618 0-1.217.247-1.605.729A11.95 11.95 0 002.25 12c0 .434.023.863.068 1.285C2.427 14.306 3.346 15 4.372 15h3.126c.618 0 .991.724.725 1.282A7.471 7.471 0 007.5 19.5a2.25 2.25 0 002.25 2.25.75.75 0 00.75-.75v-.633c0-.573.11-1.14.322-1.672.304-.76.93-1.33 1.653-1.715a9.04 9.04 0 002.86-2.4c.498-.634 1.226-1.08 2.032-1.08h.384" />
-                </svg>
-              </button>
+            <div>
+              <div className="mb-2">
+                <p className="font-bold mb-1">Test Options:</p>
+                <div className="flex items-center space-x-2">
+                  <label className="whitespace-nowrap">
+                    Limit:
+                    <input 
+                      type="number" 
+                      min="1" 
+                      max="10" 
+                      value={testLimit}
+                      onChange={(e) => setTestLimit(Number(e.target.value))}
+                      className="ml-2 w-16 px-2 py-1 border rounded"
+                    />
+                  </label>
+                  <button
+                    onClick={handleTestRecommendations}
+                    className="px-3 py-1 bg-indigo-600 text-white text-xs rounded-md hover:bg-indigo-700"
+                    disabled={isLoading}
+                  >
+                    Test ({testLimit})
+                  </button>
+                </div>
+              </div>
+              
+              {watchHistory.length > 0 && (
+                <div>
+                  <p className="font-bold mb-1">Watch History:</p>
+                  <ul className="list-disc pl-4">
+                    {watchHistory.map((item) => (
+                      <li key={item.id}>
+                        {item.title} (ID: {item.anilist_id}) - Rated: {item.rating}/10
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           </div>
         </div>
+      )}
+      
+      <div className="bg-white rounded-lg shadow p-6 mb-6">
+        <p className="text-gray-600 mb-4">
+          These recommendations are personalized based on your preferences and watch history.
+          The more anime you rate, the better your recommendations will become!
+        </p>
+        
+        {!isInitialized && !isLoading && (
+          <div className="flex flex-col items-center mt-4">
+            {!isWatchHistoryLoaded ? (
+              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 text-blue-700 rounded w-full flex items-center">
+                <div className="w-5 h-5 mr-3">
+                  <div className="w-full h-full border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                </div>
+                <p>Loading your watch history...</p>
+              </div>
+            ) : hasWatchHistory ? (
+              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 text-blue-700 rounded w-full">
+                <p className="font-medium">Based on your watch history:</p>
+                <ul className="list-disc pl-5 mt-2">
+                  {watchHistory.slice(0, 3).map(item => (
+                    <li key={item.id}>{item.title} - Rated: {item.rating}/10</li>
+                  ))}
+                  {watchHistory.length > 3 && <li>and {watchHistory.length - 3} more...</li>}
+                </ul>
+              </div>
+            ) : (
+              <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 text-yellow-700 rounded w-full">
+                <p>You don&apos;t have any watch history yet. Recommendations will use default preferences.</p>
+              </div>
+            )}
+            
+            <button
+              onClick={handleGenerateRecommendations}
+              disabled={isModelLoading}
+              className="px-6 py-3 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 
+                        focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2
+                        disabled:opacity-70 disabled:cursor-not-allowed transition-colors"
+            >
+              {isModelLoading 
+                ? 'Loading Model...' 
+                : isModelLoaded 
+                  ? 'Generate Recommendations' 
+                  : 'Load Model & Generate'}
+            </button>
+          </div>
+        )}
+        
+        {Object.keys(feedback).length > 0 && (
+          <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded">
+            <p className="text-green-700 text-sm">
+              Thank you for your feedback! We&apos;ll use it to improve your recommendations.
+            </p>
+            <p className="text-green-700 text-xs mt-1">
+              You&apos;ve provided feedback on {Object.keys(feedback).length} recommendation(s).
+            </p>
+          </div>
+        )}
       </div>
+      
+      {isLoading && (
+        <div className="bg-white rounded-lg shadow p-6 mb-6">
+          <p className="text-gray-600">
+            {isModelLoading 
+              ? 'Loading the recommendation model... This might take a moment.' 
+              : 'Generating your personalized recommendations... Almost there!'}
+          </p>
+          
+          <div className="w-full h-4 bg-gray-200 rounded-full mt-4 overflow-hidden">
+            <div 
+              className={`h-full bg-indigo-600 rounded-full transition-all duration-300 
+                ${modelLoadingProgress === 100 ? '' : 'animate-pulse'}`}
+              style={{ 
+                width: `${isModelLoading ? modelLoadingProgress : 100}%`
+              }}
+            ></div>
+          </div>
+          
+          {loadAttempts > 1 && (
+            <p className="text-sm text-gray-500 mt-2">
+              Attempt {loadAttempts} - {isModelLoading ? 'Loading model...' : 'Running inference...'}
+            </p>
+          )}
+        </div>
+      )}
+      
+      {isError && (
+        <div className="bg-red-50 border border-red-200 rounded-lg shadow p-6 mb-6">
+          <h3 className="text-lg font-semibold text-red-700 mb-2">Error</h3>
+          <p className="text-red-700 mb-2">
+            {errorMessage || 'Failed to load recommendations. Please try again.'}
+          </p>
+          
+          {loadAttempts > 1 && (
+            <p className="text-sm text-red-600 mb-3">
+              Previous attempts: {loadAttempts - 1}
+            </p>
+          )}
+          
+          <button 
+            className="mt-2 bg-red-600 text-white py-2 px-4 rounded hover:bg-red-700 transition-colors"
+            onClick={handleRetry}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+      
+      {isInitialized && !isLoading && !isError && (
+        <>
+          {recommendations.length > 0 ? (
+            <>
+              <div className="mb-6">
+                <h2 className="text-2xl font-semibold text-gray-800 mb-2">
+                  Your Top {recommendations.length} Recommendations
+                </h2>
+                <p className="text-gray-600">
+                  Based on {watchHistory.length} anime in your watch history
+                </p>
+                {watchHistory.length > 0 && (
+                  <div className="mt-2 text-sm bg-blue-50 p-3 rounded border border-blue-200">
+                    <p className="font-medium text-blue-700">Recommending anime similar to:</p>
+                    <ul className="list-disc ml-5 mt-1">
+                      {watchHistory.map(item => (
+                        <li key={item.id}>
+                          {item.title} - Rated: {item.rating}/10
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {recommendations.map((anime) => (
+                  <div key={anime.id} className="relative">
+                    {feedback[anime.id] && (
+                      <div className={`absolute top-2 right-2 z-10 px-2 py-1 text-xs font-bold rounded ${
+                        feedback[anime.id] === 'like' 
+                          ? 'bg-green-500 text-white' 
+                          : 'bg-red-500 text-white'
+                      }`}>
+                        {feedback[anime.id] === 'like' ? 'Liked' : 'Disliked'}
+                      </div>
+                    )}
+                    <RecommendationCard
+                      anime={anime}
+                      onLike={() => handleLike(anime.id)}
+                      onDislike={() => handleDislike(anime.id)}
+                      onMoreInfo={() => handleMoreInfo(anime.id)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg shadow p-6">
+              <p className="text-yellow-700">
+                No recommendations found. Try updating your preferences in your profile.
+              </p>
+              <button 
+                className="mt-4 bg-yellow-600 text-white py-2 px-4 rounded hover:bg-yellow-700"
+                onClick={handleGenerateRecommendations}
+              >
+                Try Again
+              </button>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 } 

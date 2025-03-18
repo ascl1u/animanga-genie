@@ -1,0 +1,14 @@
+{
+  "n_users": 758,
+  "n_anime": 4040,
+  "n_genres": 19,
+  "n_tags": 100,
+  "user_embedding_dim": 32,
+  "anime_embedding_dim": 32,
+  "genre_embedding_dim": 16,
+  "tag_embedding_dim": 16,
+  "dense_layers": [
+    64,
+    32
+  ]
+}

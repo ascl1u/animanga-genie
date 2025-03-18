@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WASM File Access Test</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 20px;
+      max-width: 800px;
+      margin: 0 auto;
+      line-height: 1.6;
+    }
+    h1 {
+      margin-bottom: 20px;
+    }
+    .file-status {
+      margin-bottom: 10px;
+      padding: 10px;
+      border-radius: 5px;
+    }
+    .success {
+      background-color: #d4edda;
+      color: #155724;
+    }
+    .error {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+    .pending {
+      background-color: #fff3cd;
+      color: #856404;
+    }
+  </style>
+</head>
+<body>
+  <h1>WASM File Access Test</h1>
+  <div id="results"></div>
+
+  <script>
+    const filesToCheck = [
+      '/models/anime_recommender/anime_recommender.onnx',
+      '/models/anime_recommender/onnx_model_metadata.json',
+      '/models/anime_recommender/ort-wasm.wasm',
+      '/models/anime_recommender/ort-wasm-simd.wasm',
+      '/models/anime_recommender/ort-wasm-threaded.wasm'
+    ];
+
+    const resultsContainer = document.getElementById('results');
+
+    async function checkFile(url) {
+      const fileDiv = document.createElement('div');
+      fileDiv.className = 'file-status pending';
+      fileDiv.textContent = `Checking ${url}...`;
+      resultsContainer.appendChild(fileDiv);
+
+      try {
+        const response = await fetch(url, { method: 'HEAD' });
+        
+        if (response.ok) {
+          fileDiv.className = 'file-status success';
+          fileDiv.textContent = `✅ ${url} - Accessible (${response.status})`;
+          
+          // For small files, try to get content type and size
+          if (!url.endsWith('.onnx') && !url.endsWith('.wasm')) {
+            const getResponse = await fetch(url);
+            const contentType = getResponse.headers.get('content-type');
+            const contentLength = getResponse.headers.get('content-length');
+            fileDiv.textContent += ` - Type: ${contentType}, Size: ${contentLength} bytes`;
+          }
+        } else {
+          fileDiv.className = 'file-status error';
+          fileDiv.textContent = `❌ ${url} - Error: ${response.status} ${response.statusText}`;
+        }
+      } catch (error) {
+        fileDiv.className = 'file-status error';
+        fileDiv.textContent = `❌ ${url} - Exception: ${error.message}`;
+      }
+    }
+
+    // Check all files
+    Promise.all(filesToCheck.map(url => checkFile(url)));
+  </script>
+</body>
+</html> 

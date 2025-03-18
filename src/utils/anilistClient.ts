@@ -3,7 +3,7 @@ import { ApolloClient, InMemoryCache, HttpLink, gql } from '@apollo/client';
 // Create an Apollo Client instance
 export const anilistClient = new ApolloClient({
   link: new HttpLink({
-    uri: 'https://graphql.anilist.co',
+    uri: '/api/anilist',
     headers: {
       'Content-Type': 'application/json',
       'Accept': 'application/json',

@@ -5,26 +5,31 @@ interface RecommendationCardProps {
   anime: AnimeData;
   onLike?: () => void;
   onDislike?: () => void;
-  onMoreInfo?: () => void;
 }
 
 export default function RecommendationCard({
   anime,
   onLike,
   onDislike,
-  onMoreInfo,
 }: RecommendationCardProps) {
+  // Format the scores
+  const displayScore = anime.averageScore 
+    ? (anime.averageScore / 10).toFixed(1) // Convert from 0-100 to 0-10 scale
+    : (anime.score * 10).toFixed(1); // Convert from 0-1 to 0-10 scale
+  const recommendationPercentage = (anime.score * 100).toFixed(1);
   
   return (
     <div className="bg-white rounded-lg shadow overflow-hidden h-full flex flex-col">
-      <div className="h-48 bg-gray-200 relative">
+      <div className="h-56 bg-gray-200 relative">
         {anime.cover_image ? (
           <Image 
             src={anime.cover_image} 
             alt={anime.title}
             fill
             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-            className="object-cover"
+            className="object-contain"
+            quality={90}
+            priority
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-gray-400">
@@ -33,17 +38,17 @@ export default function RecommendationCard({
         )}
       </div>
       <div className="p-4 flex-grow">
-        <h3 className="text-lg font-semibold mb-2 line-clamp-2">{anime.title}</h3>
+        <h3 className="text-lg font-semibold mb-2 line-clamp-2 text-gray-900">{anime.title}</h3>
         <div className="flex items-center mb-2">
           <span className="text-yellow-500 mr-1">★</span>
-          <span className="text-gray-700">{anime.score.toFixed(2)}</span>
+          <span className="text-gray-700">{displayScore}</span>
+          <span className="ml-3 text-gray-600 text-sm">
+            Match: <span className="font-semibold">{recommendationPercentage}%</span>
+          </span>
         </div>
-        <p className="text-gray-600 text-sm mb-3">
-          Recommendation score: {(anime.score * 100).toFixed(1)}%
-        </p>
         
         {anime.genres && anime.genres.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 mb-3">
             {anime.genres.slice(0, 3).map((genre, index) => (
               <span 
                 key={index} 
@@ -59,18 +64,22 @@ export default function RecommendationCard({
             )}
           </div>
         ) : (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 mb-3">
             <span className="bg-indigo-100 text-indigo-800 text-xs px-2 py-1 rounded">Anime</span>
           </div>
         )}
+        
+        {/* Description */}
+        {anime.description && (
+          <div className="mt-2 mb-3">
+            <p className="text-sm text-gray-700 line-clamp-4">{
+              // Remove HTML tags if present
+              anime.description.replace(/<[^>]*>/g, '')
+            }</p>
+          </div>
+        )}
       </div>
-      <div className="bg-gray-50 px-4 py-3 flex justify-between mt-auto">
-        <button 
-          className="text-indigo-600 hover:text-indigo-800"
-          onClick={onMoreInfo}
-        >
-          More Info
-        </button>
+      <div className="bg-gray-50 px-4 py-3 flex justify-end mt-auto">
         <div className="flex space-x-2">
           <button 
             className="text-green-600 hover:text-green-800" 

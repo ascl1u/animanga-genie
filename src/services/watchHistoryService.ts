@@ -3,6 +3,16 @@ import type { AnimeWatchHistoryItem, UpdateWatchHistoryParams, WatchHistoryFormD
 
 const supabase = createClient();
 
+// Custom event for watch history changes
+export const WATCH_HISTORY_CHANGED_EVENT = 'watch-history-changed';
+
+// Function to trigger a watch history change event
+export const notifyWatchHistoryChanged = () => {
+  // Create a custom event that can be listened to by components
+  const event = new CustomEvent(WATCH_HISTORY_CHANGED_EVENT);
+  window.dispatchEvent(event);
+};
+
 /**
  * Get all watch history items for the current user
  */
@@ -99,6 +109,9 @@ export const addToWatchHistory = async (watchHistoryData: WatchHistoryFormData):
       console.log('Verified watch history entry exists:', verifyData);
     }
     
+    // Notify that watch history has changed
+    notifyWatchHistoryChanged();
+    
     return data;
   } catch (error) {
     console.error('Error in addToWatchHistory:', error);
@@ -127,6 +140,9 @@ export const updateWatchHistoryRating = async (
       throw error;
     }
 
+    // Notify that watch history has changed
+    notifyWatchHistoryChanged();
+    
     return data;
   } catch (error) {
     console.error('Error in updateWatchHistoryRating:', error);
@@ -148,6 +164,9 @@ export const deleteWatchHistoryItem = async (id: string): Promise<void> => {
       console.error('Error deleting watch history item:', error);
       throw error;
     }
+    
+    // Notify that watch history has changed
+    notifyWatchHistoryChanged();
   } catch (error) {
     console.error('Error in deleteWatchHistoryItem:', error);
     throw error;

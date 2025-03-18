@@ -5,6 +5,7 @@ import ClientNavigation from '@/components/ClientNavigation';
 import { SimpleAuthProvider } from '@/components/SimpleAuthProvider';
 import { Toaster } from 'react-hot-toast';
 import { ModelProvider } from '@/context/ModelContext';
+import { RecommendationsProvider } from '@/context/RecommendationsContext';
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -30,13 +31,15 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <ModelProvider>
-          <SimpleAuthProvider>
-            <ClientNavigation />
-            <Toaster position="top-right" />
-            <main>
-              {children}
-            </main>
-          </SimpleAuthProvider>
+          <RecommendationsProvider>
+            <SimpleAuthProvider>
+              <ClientNavigation />
+              <Toaster position="top-right" />
+              <main>
+                {children}
+              </main>
+            </SimpleAuthProvider>
+          </RecommendationsProvider>
         </ModelProvider>
       </body>
     </html>

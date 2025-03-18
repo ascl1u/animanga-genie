@@ -9,13 +9,31 @@ import { logOnnxServiceState } from './onnxModelService';
 import { getUserWatchHistory } from './watchHistoryService';
 import { AnimeWatchHistoryItem } from '@/types/watchHistory';
 import { getAnimeDetails } from '@/utils/anilistClient';
+import { collaborativeFilteringService, CollaborativeRecommendation } from './collaborativeFilteringService';
+import { createClient } from '@/utils/supabase/client';
 
 export interface AnimeData {
   id: number;
   title: string;
   score: number;
+  averageScore?: number; // Original AniList score (out of 100)
   cover_image?: string;
   genres?: string[];
+  description?: string; // Anime description from AniList
+  _debugInfo?: {
+    userEmbedding?: {
+      dimension: number;
+      sample?: number[];
+    };
+    negativePreferences?: {
+      genres?: string[];
+      tags?: string[];
+    };
+    collaborativeInfo?: {
+      contributorCount: number;
+      topContributors?: string;
+    };
+  };
 }
 
 export interface RecommendationResult {
@@ -30,7 +48,312 @@ export interface RecommendationResult {
     animeIdMapSuccess?: boolean;
     genresUsed?: string[];
     tagsUsed?: string[];
+    negativePreferences?: {
+      genres?: string[];
+      tags?: string[];
+    };
+    userEmbedding?: {
+      dimension: number;
+      sample?: number[];
+      method?: string;
+    };
+    collaborativeFiltering?: {
+      used: boolean;
+      similarUserCount?: number;
+      blendedRecommendations?: boolean;
+    };
   };
+}
+
+// User embedding calculation approach
+enum UserEmbeddingMethod {
+  COLLABORATIVE_FILTERING = 'collaborative_filtering', // Implemented!
+  PREFERENCE_VECTOR = 'preference_vector',            // Main current approach
+  DEFAULT = 'default'                                 // Fallback to a fixed index
+}
+
+/**
+ * Calculate user embedding based on collaborative filtering
+ * This implements matrix factorization to find similar users
+ */
+async function calculateCollaborativeFilteringEmbedding(
+  userId: string,
+  watchHistory: AnimeWatchHistoryItem[]
+): Promise<{
+  embeddingVector: number[];
+  watchedIndices: number[];
+  collaborativeRecommendations?: CollaborativeRecommendation[];
+}> {
+  console.log('[RECOMMENDATION] Using collaborative filtering for user', userId);
+  
+  try {
+    // Train the collaborative filtering model if needed
+    await collaborativeFilteringService.trainModel();
+    
+    // Get user factors from the trained model
+    const userFactors = await collaborativeFilteringService.getUserFactors(userId);
+    
+    if (!userFactors) {
+      console.log('[RECOMMENDATION] No collaborative filtering factors available for user, falling back to preference vector');
+      return {
+        embeddingVector: [0], // Will be replaced with preference vector
+        watchedIndices: watchHistory.map(item => item.anilist_id)
+      };
+    }
+    
+    // Get collaborative recommendations
+    const collaborativeRecommendations = await collaborativeFilteringService.getRecommendations(
+      userId,
+      watchHistory,
+      20 // Get more recommendations than needed to allow for filtering
+    );
+    
+    console.log(`[RECOMMENDATION] Generated ${collaborativeRecommendations.length} collaborative filtering recommendations`);
+    
+    return {
+      embeddingVector: userFactors,
+      watchedIndices: watchHistory.map(item => item.anilist_id),
+      collaborativeRecommendations
+    };
+  } catch (error) {
+    console.error('[RECOMMENDATION] Error in collaborative filtering:', error);
+    return {
+      embeddingVector: [0], // Will be replaced with preference vector
+      watchedIndices: watchHistory.map(item => item.anilist_id)
+    };
+  }
+}
+
+/**
+ * Calculate a user embedding based on watch history
+ * @param watchHistory User's anime watch history
+ * @param animeToIdx Mapping from anime IDs to model indices
+ * @returns A vector representing the user's preferences
+ */
+async function calculateUserEmbedding(
+  watchHistory: AnimeWatchHistoryItem[],
+  animeToIdx: Record<string, number>
+): Promise<{
+  embeddingVector: number[];
+  method: UserEmbeddingMethod;
+  watchedIndices: number[];
+}> {
+  console.log('[RECOMMENDATION] Calculating user embedding...');
+  
+  if (!watchHistory || watchHistory.length === 0) {
+    console.log('[RECOMMENDATION] No watch history available, using default embedding method');
+    return {
+      embeddingVector: [0], // Default embedding
+      method: UserEmbeddingMethod.DEFAULT,
+      watchedIndices: []
+    };
+  }
+  
+  // Map watched anime to indices
+  const watchedIndices: number[] = [];
+  for (const item of watchHistory) {
+    const animeId = item.anilist_id.toString();
+    // Try different formats of the ID to match mapping
+    const possibleIds = [
+      animeId,
+      `anilist-${animeId}`,
+      `anime-${animeId}`
+    ];
+    
+    // Find a matching ID format
+    for (const id of possibleIds) {
+      if (animeToIdx[id] !== undefined) {
+        watchedIndices.push(animeToIdx[id]);
+        break;
+      }
+    }
+  }
+  
+  if (watchedIndices.length === 0) {
+    console.log('[RECOMMENDATION] Could not map any watched anime to indices, using default embedding');
+    return {
+      embeddingVector: [0], // Default embedding
+      method: UserEmbeddingMethod.DEFAULT,
+      watchedIndices: []
+    };
+  }
+  
+  // For now, use a preference vector approach
+  // This creates a representation of the user based on their ratings and watched anime
+  
+  // First, normalize ratings to be between 0 and 1
+  const normalizedRatings: { animeIdx: number; rating: number }[] = [];
+  
+  for (let i = 0; i < watchHistory.length; i++) {
+    const item = watchHistory[i];
+    // Only include items that we have mapped indices for
+    const animeIdx = watchedIndices[i];
+    if (animeIdx !== undefined) {
+      // Normalize rating (1-10) to a 0-1 scale, where 5 is neutral (0.5)
+      const normalizedRating = (item.rating - 1) / 9;
+      normalizedRatings.push({ animeIdx, rating: normalizedRating });
+    }
+  }
+  
+  // Sort by rating (highest first)
+  normalizedRatings.sort((a, b) => b.rating - a.rating);
+  
+  // Create a vector with weighted preferences
+  // For now, this is a simple approach that we can refine later
+  const preferenceVector = new Array(normalizedRatings.length * 2).fill(0);
+  
+  // Fill the vector with anime indices and their normalized ratings
+  normalizedRatings.forEach((item, i) => {
+    preferenceVector[i*2] = item.animeIdx;
+    preferenceVector[i*2 + 1] = item.rating;
+  });
+  
+  console.log(`[RECOMMENDATION] Created user embedding with ${preferenceVector.length} dimensions using ${UserEmbeddingMethod.PREFERENCE_VECTOR} method`);
+  
+  return {
+    embeddingVector: preferenceVector,
+    method: UserEmbeddingMethod.PREFERENCE_VECTOR,
+    watchedIndices
+  };
+}
+
+/**
+ * Extract negative preferences from low-rated anime
+ * @param watchHistory User's anime watch history
+ * @param threshold Rating threshold below which to consider negative (typically 5/10)
+ */
+async function extractNegativePreferences(
+  watchHistory: AnimeWatchHistoryItem[],
+  threshold: number = 5
+): Promise<{
+  genres: Set<string>;
+  tags: Set<string>;
+  animeIds: number[];
+}> {
+  console.log(`[RECOMMENDATION] Extracting negative preferences with threshold ${threshold}...`);
+  
+  const negativeGenres = new Set<string>();
+  const negativeTags = new Set<string>();
+  const negativeAnimeIds: number[] = [];
+  
+  if (!watchHistory || watchHistory.length === 0) {
+    return { genres: negativeGenres, tags: negativeTags, animeIds: negativeAnimeIds };
+  }
+  
+  // Get low-rated anime
+  const lowRatedAnime = watchHistory.filter(item => item.rating < threshold);
+  console.log(`[RECOMMENDATION] Found ${lowRatedAnime.length} anime rated below ${threshold}/10`);
+  
+  if (lowRatedAnime.length === 0) {
+    return { genres: negativeGenres, tags: negativeTags, animeIds: negativeAnimeIds };
+  }
+  
+  // Process each low-rated anime
+  const animeDetailsPromises: Promise<void>[] = [];
+  
+  for (const item of lowRatedAnime) {
+    negativeAnimeIds.push(item.anilist_id);
+    
+    animeDetailsPromises.push((async () => {
+      try {
+        const animeDetails = await getAnimeDetails(item.anilist_id);
+        
+        if (animeDetails) {
+          // Calculate negative weight based on how low the rating is
+          // Scale is 1-10, with 5 being neutral. Lower ratings have more negative weight.
+          const negativeWeight = (threshold - item.rating) / threshold; // 0 to 1 scale
+          
+          if (negativeWeight > 0) {
+            // Add weight-filtered genres to negative set
+            // Only add the most influential genres for very low ratings
+            const genreLimit = Math.ceil(animeDetails.genres.length * negativeWeight);
+            animeDetails.genres.slice(0, genreLimit).forEach(genre => negativeGenres.add(genre));
+            
+            // Add most influential tags to negative set
+            const sortedTags = [...animeDetails.tags]
+              .sort((a, b) => b.rank - a.rank)
+              .slice(0, Math.ceil(5 * negativeWeight)); // More tags from lowest rated anime
+            
+            sortedTags.forEach(tag => negativeTags.add(tag.name));
+            
+            console.log(`[RECOMMENDATION] Added negative preferences from ${animeDetails.title.english || animeDetails.title.romaji} (${item.rating}/10): ${genreLimit} genres, ${sortedTags.length} tags, weight: ${negativeWeight.toFixed(2)}`);
+          }
+        }
+      } catch (error) {
+        console.error(`[RECOMMENDATION] Error fetching details for anime ${item.anilist_id}:`, error);
+      }
+    })());
+  }
+  
+  // Wait for all anime details to be fetched
+  await Promise.all(animeDetailsPromises);
+  
+  console.log(`[RECOMMENDATION] Extracted negative preferences: ${negativeGenres.size} genres, ${negativeTags.size} tags`);
+  
+  return {
+    genres: negativeGenres,
+    tags: negativeTags,
+    animeIds: negativeAnimeIds
+  };
+}
+
+/**
+ * Interface for anime data from Supabase
+ */
+interface SupabaseAnimeData {
+  anilist_id: number;
+  title?: Record<string, string>; // JSON object with title variants
+  rating?: number;
+  genres?: string[];
+  tags?: unknown[]; // Array of tags
+  popularity?: number;
+  format?: string;
+  episodes?: number;
+  year?: number;
+  description?: string;
+  image_url?: string;
+}
+
+/**
+ * Fetch anime data from the Supabase database
+ * This allows us to consider all anime in the database for recommendations
+ * @returns Promise with the fetched anime data
+ */
+async function fetchAnimeFromSupabase(limit: number = 5000): Promise<{
+  animeIndices: number[];
+  animeMapping: Record<number, number>;
+  success: boolean;
+  animeData?: SupabaseAnimeData[]; // Use the specific interface instead of any[]
+}> {
+  const supabase = createClient();
+  const animeIndices: number[] = [];
+  const animeMapping: Record<number, number> = {};
+  
+  try {
+    console.log(`[RECOMMENDATION] Fetching up to ${limit} anime from Supabase database`);
+    
+    const { data: animeData, error } = await supabase
+      .from('anime')
+      .select('anilist_id')
+      .order('popularity', { ascending: false })
+      .limit(limit);
+    
+    if (error) {
+      console.error('[RECOMMENDATION] Error fetching anime from Supabase:', error);
+      return { animeIndices, animeMapping, success: false };
+    }
+    
+    console.log(`[RECOMMENDATION] Fetched ${animeData.length} anime from Supabase`);
+    return { 
+      animeIndices, 
+      animeMapping, 
+      success: true,
+      animeData // Return the raw data so we can process it with mappings
+    };
+  } catch (error) {
+    console.error('[RECOMMENDATION] Error fetching anime from Supabase:', error);
+    return { animeIndices, animeMapping, success: false };
+  }
 }
 
 /**
@@ -74,6 +397,20 @@ export async function getRecommendations(
       mappingKeys?: string[];
       genresUsed?: string[];
       tagsUsed?: string[];
+      negativePreferences?: {
+        genres?: string[];
+        tags?: string[];
+      };
+      userEmbedding?: {
+        dimension: number;
+        sample?: number[];
+        method?: string;
+      };
+      collaborativeFiltering?: {
+        used: boolean;
+        similarUserCount?: number;
+        blendedRecommendations?: boolean;
+      };
     } = {
       watchedAnimeIds: userWatchHistory.map(item => item.anilist_id),
       mappedAnimeIds: [] as number[],
@@ -91,7 +428,7 @@ export async function getRecommendations(
       debugInfo.mappingKeys = Object.keys(mappingsData);
       
       // Load model metadata which includes required model parameters
-      const metadata = await loadModelMetadata();
+      await loadModelMetadata();
       
       // Only load the model if it's not already loaded
       if (!modelIsLoaded) {
@@ -125,310 +462,580 @@ export async function getRecommendations(
         console.log('[RECOMMENDATION] Sample anime IDs in mapping:', animeIdSamples);
       }
       
+      // Try collaborative filtering approach first
+      let userEmbedding;
+      let collaborativeRecommendations: CollaborativeRecommendation[] | undefined;
+      
+      if (userWatchHistory.length >= 5) {
+        console.log('[RECOMMENDATION] Trying collaborative filtering approach');
+        
+        // Calculate user embedding using collaborative filtering
+        const collaborativeResult = await calculateCollaborativeFilteringEmbedding(
+          userId,
+          userWatchHistory
+        );
+        
+        // Store collaborative recommendations if available
+        collaborativeRecommendations = collaborativeResult.collaborativeRecommendations;
+        
+        // If we got collaborative recommendations, use those
+        if (collaborativeRecommendations && collaborativeRecommendations.length > 0) {
+          console.log('[RECOMMENDATION] Using collaborative filtering recommendations');
+          
+          // Set flag in debug info
+          debugInfo.collaborativeFiltering = {
+            used: true,
+            similarUserCount: collaborativeRecommendations.reduce(
+              (count, rec) => count + rec.contributors.length, 0
+            ) / collaborativeRecommendations.length,
+            blendedRecommendations: false
+          };
+          
+          // Use collaborative embedding
+          userEmbedding = {
+            embeddingVector: collaborativeResult.embeddingVector,
+            method: UserEmbeddingMethod.COLLABORATIVE_FILTERING,
+            watchedIndices: collaborativeResult.watchedIndices
+          };
+          
+          // Save user embedding for debugging
+          debugInfo.userEmbedding = {
+            dimension: userEmbedding.embeddingVector.length,
+            sample: userEmbedding.embeddingVector.slice(0, 10), // Just show a sample
+            method: UserEmbeddingMethod.COLLABORATIVE_FILTERING
+          };
+        } else {
+          // Fall back to preference vector approach
+          console.log('[RECOMMENDATION] Collaborative filtering did not return recommendations, falling back to preference vector');
+          userEmbedding = await calculateUserEmbedding(
+            userWatchHistory,
+            animeToIdx
+          );
+          
+          debugInfo.collaborativeFiltering = {
+            used: false,
+            blendedRecommendations: false
+          };
+        }
+      } else {
+        // Not enough watch history for collaborative filtering
+        console.log('[RECOMMENDATION] Not enough watch history for collaborative filtering, using preference vector');
+        userEmbedding = await calculateUserEmbedding(
+          userWatchHistory,
+          animeToIdx
+        );
+        
+        debugInfo.collaborativeFiltering = {
+          used: false,
+          blendedRecommendations: false
+        };
+      }
+      
+      // Save user embedding for debugging if not already set
+      if (!debugInfo.userEmbedding) {
+        debugInfo.userEmbedding = {
+          dimension: userEmbedding.embeddingVector.length,
+          sample: userEmbedding.embeddingVector.slice(0, 10), // Just show a sample
+          method: userEmbedding.method
+        };
+      }
+      
       // Use a default user index of 0 since we don't have user mappings
+      // This will be a fallback if we can't use our embedding approach
       const userIndex = 0;
       
-      // Create candidate anime indices from watch history if available
-      // MODIFIED: Limit to 10 candidates for testing
-      const maxCandidates = 10; // CHANGED: Reduced from 100 to 10 for testing
-      let candidateAnimeIndices = Array.from({ length: maxCandidates }, (_, i) => i); // Default fallback
+      // Extract negative preferences from low-rated anime
+      const negativePreferences = await extractNegativePreferences(userWatchHistory);
+      
+      // Save negative preferences for debugging
+      debugInfo.negativePreferences = {
+        genres: Array.from(negativePreferences.genres),
+        tags: Array.from(negativePreferences.tags)
+      };
+      
+      // If we have collaborative recommendations, process and return them directly
+      if (collaborativeRecommendations && collaborativeRecommendations.length > 0) {
+        console.log('[RECOMMENDATION] Processing collaborative filtering recommendations');
+        
+        // Filter out anime that the user has already watched
+        const watchedAnimeIds = new Set(userWatchHistory.map(item => item.anilist_id));
+        const filteredRecommendations = collaborativeRecommendations.filter(
+          rec => !watchedAnimeIds.has(rec.animeId)
+        );
+        
+        // Limit to the requested number
+        const topRecommendations = filteredRecommendations.slice(0, limit);
+        
+        // Fetch details for each anime
+        const enrichedResults: AnimeData[] = [];
+        const enrichmentPromises: Promise<void>[] = [];
+        
+        for (const recommendation of topRecommendations) {
+          enrichmentPromises.push((async () => {
+            try {
+              const details = await getAnimeDetails(recommendation.animeId);
+              
+              if (details) {
+                // Create string listing top contributors
+                const contributorInfo = recommendation.contributors
+                  .slice(0, 3)
+                  .map(c => `User rated ${c.rating}/10 (similarity: ${(c.weight * 100).toFixed(0)}%)`)
+                  .join(', ');
+                
+                enrichedResults.push({
+                  id: recommendation.animeId,
+                  title: details.title.english || details.title.romaji || `Anime ${recommendation.animeId}`,
+                  score: recommendation.score / 10, // Convert to 0-1 scale
+                  averageScore: details.averageScore,
+                  cover_image: details.coverImage?.large || details.coverImage?.medium,
+                  genres: details.genres,
+                  description: details.description,
+                  _debugInfo: {
+                    userEmbedding: {
+                      dimension: userEmbedding.embeddingVector.length,
+                      sample: userEmbedding.embeddingVector.slice(0, 10)
+                    },
+                    negativePreferences: {
+                      genres: Array.from(negativePreferences.genres),
+                      tags: Array.from(negativePreferences.tags)
+                    },
+                    collaborativeInfo: {
+                      contributorCount: recommendation.contributors.length,
+                      topContributors: contributorInfo
+                    }
+                  }
+                });
+              } else {
+                // If we couldn't get details, still include the basic info
+                enrichedResults.push({
+                  id: recommendation.animeId,
+                  title: `Anime ${recommendation.animeId}`,
+                  score: recommendation.score / 10, // Convert to 0-1 scale
+                  _debugInfo: {
+                    userEmbedding: {
+                      dimension: userEmbedding.embeddingVector.length,
+                      sample: userEmbedding.embeddingVector.slice(0, 10)
+                    },
+                    negativePreferences: {
+                      genres: Array.from(negativePreferences.genres),
+                      tags: Array.from(negativePreferences.tags)
+                    },
+                    collaborativeInfo: {
+                      contributorCount: recommendation.contributors.length
+                    }
+                  }
+                });
+              }
+            } catch (error) {
+              console.error(`[RECOMMENDATION] Error fetching details for anime ${recommendation.animeId}:`, error);
+              
+              // Even if we have an error, still add a basic entry
+              enrichedResults.push({
+                id: recommendation.animeId,
+                title: `Anime ${recommendation.animeId}`,
+                score: recommendation.score / 10, // Convert to 0-1 scale
+                _debugInfo: {
+                  userEmbedding: {
+                    dimension: userEmbedding.embeddingVector.length,
+                    sample: userEmbedding.embeddingVector.slice(0, 10)
+                  },
+                  negativePreferences: {
+                    genres: Array.from(negativePreferences.genres),
+                    tags: Array.from(negativePreferences.tags)
+                  }
+                }
+              });
+            }
+          })());
+        }
+        
+        // Wait for all enrichment to complete
+        await Promise.all(enrichmentPromises);
+        
+        // Sort again in case the order was lost
+        enrichedResults.sort((a, b) => b.score - a.score);
+        
+        return {
+          recommendations: enrichedResults,
+          status: 'success',
+          userWatchHistory,
+          debugInfo
+        };
+      }
+      
+      // Continue with existing model-based recommendation logic...
+      
+      // Get the total number of anime in the model
+      const totalAnimeCount = Object.keys(idxToAnime).length;
+      console.log(`[RECOMMENDATION] Total anime in model: ${totalAnimeCount}`);
+      
+      // Fetch all anime from the Supabase database
+      console.log(`[RECOMMENDATION] Fetching all anime from Supabase database`);
+      
+      // Get all anime from the database
+      let candidateAnimeIndices: number[] = [];
+      const animeIdToAnilistId: Record<number, number> = {};
+      
+      // Fetch anime data from Supabase
+      const { success, animeData } = await fetchAnimeFromSupabase();
+      
+      if (success && animeData && animeData.length > 0) {
+        console.log(`[RECOMMENDATION] Successfully retrieved ${animeData.length} anime from Supabase`);
+        
+        // Find the model indices for each of the anime IDs from Supabase
+        for (const anime of animeData) {
+          const anilistId = anime.anilist_id;
+          const possibleIds = [
+            anilistId.toString(),
+            `anilist-${anilistId}`,
+            `anime-${anilistId}`
+          ];
+          
+          // Try different formats of the ID to match the mapping
+          for (const id of possibleIds) {
+            const animeIdx = animeToIdx[id];
+            if (animeIdx !== undefined) {
+              candidateAnimeIndices.push(animeIdx);
+              animeIdToAnilistId[animeIdx] = anilistId;
+              break;
+            }
+          }
+        }
+        
+        console.log(`[RECOMMENDATION] Mapped ${candidateAnimeIndices.length} out of ${animeData.length} Supabase anime to model indices`);
+
+        // If we didn't find any matches, fall back to the original approach
+        if (candidateAnimeIndices.length === 0) {
+          console.log('[RECOMMENDATION] Could not map any Supabase anime IDs to model indices, using fallback');
+          fallbackToModelIndices();
+        }
+      } else {
+        // Fall back to the original logic if Supabase query failed
+        console.log('[RECOMMENDATION] Supabase query failed or returned no results, using fallback');
+        fallbackToModelIndices();
+      }
+      
+      // Define a function to use the fallback approach with model indices
+      function fallbackToModelIndices() {
+        const maxCandidates = Math.min(100, totalAnimeCount);
+        
+        // Generate a diverse set of candidate indices
+        const allAnimeIndices = Object.keys(idxToAnime).map(key => parseInt(key));
+        
+        if (allAnimeIndices.length > 0) {
+          // If we have a proper mapping, use a diverse sampling approach
+          const step = Math.max(1, Math.floor(allAnimeIndices.length / maxCandidates));
+          
+          // Take evenly spaced samples from the full range
+          for (let i = 0; i < allAnimeIndices.length && candidateAnimeIndices.length < maxCandidates; i += step) {
+            candidateAnimeIndices.push(allAnimeIndices[i]);
+          }
+          
+          // If we still need more, add some random ones
+          if (candidateAnimeIndices.length < maxCandidates) {
+            const remainingCount = maxCandidates - candidateAnimeIndices.length;
+            
+            // Shuffle the array using Fisher-Yates algorithm and take what we need
+            const unusedIndices = [...allAnimeIndices].filter(idx => !candidateAnimeIndices.includes(idx));
+            for (let i = unusedIndices.length - 1; i > 0; i--) {
+              const j = Math.floor(Math.random() * (i + 1));
+              [unusedIndices[i], unusedIndices[j]] = [unusedIndices[j], unusedIndices[i]];
+            }
+            
+            candidateAnimeIndices = [...candidateAnimeIndices, ...unusedIndices.slice(0, remainingCount)];
+          }
+        } else {
+          // Fallback to sequential indices if mapping failed
+          candidateAnimeIndices = Array.from({ length: maxCandidates }, (_, i) => i);
+          console.log('[RECOMMENDATION] Using sequential indices as fallback');
+        }
+      }
+            
+      console.log(`[RECOMMENDATION] Using ${candidateAnimeIndices.length} candidate indices for recommendations`);
       
       // Get anime genres and tags from AniList API if we have watch history
       let genres: string[] = [];
       let tags: string[] = [];
       
-      if (userWatchHistory.length > 0) {
-        console.log('[RECOMMENDATION] Using user watch history for candidate selection');
+      if (userWatchHistory.length === 0) {
+        // No watch history, use a simplified approach with default preferences
+        console.log('[RECOMMENDATION] No watch history, using simplified approach with default preferences');
+        genres = preferredGenres;
+        tags = preferredTags;
         
-        // Attempt to fetch anime details for the first anime in watch history
-        const watchItem = userWatchHistory[0]; // Start with the first item
-        try {
-          const animeDetails = await getAnimeDetails(watchItem.anilist_id);
-          
-          if (animeDetails) {
-            genres = animeDetails.genres || [];
-            tags = animeDetails.tags.map(tag => tag.name) || [];
+        // Return a basic recommendation result
+        return {
+          recommendations: [],
+          status: 'error',
+          error: 'Not enough watch history to generate personalized recommendations',
+          debugInfo
+        };
+      }
+      
+      // Continue with regular recommendation flow using watch history
+      console.log('[RECOMMENDATION] Using user watch history for candidate selection');
+      
+      // Use only highly-rated anime (>= 6/10) for positive preferences
+      const highRatedAnime = userWatchHistory.filter(item => item.rating >= 6);
+      console.log(`[RECOMMENDATION] Using ${highRatedAnime.length} highly-rated anime to gather positive preferences`);
+      
+      // Collect genres and tags from multiple anime in watch history
+      const allGenres: Set<string> = new Set();
+      const allTags: Set<string> = new Set();
+      const animeDetailsPromises: Promise<void>[] = [];
+      
+      // Process each watched anime in parallel
+      for (const watchItem of highRatedAnime) {
+        animeDetailsPromises.push((async () => {
+          try {
+            const animeDetails = await getAnimeDetails(watchItem.anilist_id);
             
-            console.log('[RECOMMENDATION] Fetched anime details successfully');
-            console.log('[RECOMMENDATION] Genres:', genres);
-            console.log('[RECOMMENDATION] Tags:', tags.slice(0, 10), '...');
-            
-            debugInfo.genresUsed = genres;
-            debugInfo.tagsUsed = tags.slice(0, 10);
-          } else {
-            console.log('[RECOMMENDATION] Could not fetch anime details, using fallback genres and tags');
-            genres = preferredGenres;
-            tags = preferredTags;
-          }
-        } catch (error) {
-          console.error('[RECOMMENDATION] Error fetching anime details:', error);
-          genres = preferredGenres;
-          tags = preferredTags;
-        }
-        
-        // Get anime indices from the animeToIdx mapping
-        // Map anilist_id to model indices where possible
-        const watchHistoryIndices = userWatchHistory
-          .map(item => {
-            // Try different formats of the ID to match mapping
-            const animeId = item.anilist_id.toString();
-            const possibleIds = [
-              animeId,                         // try as-is
-              `anilist-${animeId}`,            // try with prefix
-              item.anilist_id                  // try as number
-            ];
-            
-            // Try to find a match using any format
-            let modelIdx = null;
-            for (const id of possibleIds) {
-              const stringId = String(id);
-              if (animeToIdx[stringId] !== undefined) {
-                modelIdx = animeToIdx[stringId];
-                console.log(`[RECOMMENDATION] Found mapping for anime ID: ${animeId} using format: ${stringId} → ${modelIdx}`);
-                debugInfo.mappedAnimeIds.push(item.anilist_id);
-                return { modelIdx, anilist_id: item.anilist_id, rating: item.rating };
+            if (animeDetails) {
+              // Calculate weight based on user rating (higher rating = more influence)
+              // Scale is 1-10, with 5 being neutral. Ratings below 5 won't contribute positively.
+              const ratingWeight = Math.max(0, (watchItem.rating - 5) / 5); // 0 to 1 scale
+              
+              if (ratingWeight > 0) {
+                // Add genres from this anime to our set with weight consideration
+                animeDetails.genres.forEach(genre => allGenres.add(genre));
+                
+                // Add top tags from this anime to our set (prioritize by rank and user rating)
+                const sortedTags = [...animeDetails.tags]
+                  .sort((a, b) => b.rank - a.rank)
+                  .slice(0, Math.ceil(10 * ratingWeight)); // More tags from highly rated anime
+                
+                sortedTags.forEach(tag => allTags.add(tag.name));
+                
+                console.log(`[RECOMMENDATION] Added weighted preferences from ${animeDetails.title.english || animeDetails.title.romaji} (${watchItem.rating}/10): ${animeDetails.genres.length} genres, ${sortedTags.length} tags, weight: ${ratingWeight.toFixed(2)}`);
+              } else {
+                console.log(`[RECOMMENDATION] Skipping preferences from neutral anime: ${animeDetails.title.english || animeDetails.title.romaji} (${watchItem.rating}/10)`);
               }
             }
-            
-            console.log(`[RECOMMENDATION] Could not find mapping for anime ID: ${animeId}`);
-            return null;
-          })
-          .filter(item => item !== null) as { modelIdx: number, anilist_id: number, rating: number }[];
+          } catch (error) {
+            console.error(`[RECOMMENDATION] Error fetching details for anime ${watchItem.anilist_id}:`, error);
+          }
+        })());
+      }
+      
+      // Wait for all anime details to be fetched
+      await Promise.all(animeDetailsPromises);
+      
+      // Convert Sets to arrays
+      genres = Array.from(allGenres);
+      tags = Array.from(allTags);
+      
+      if (genres.length > 0 || tags.length > 0) {
+        console.log('[RECOMMENDATION] Collected preferences from watch history successfully');
+        console.log('[RECOMMENDATION] Combined genres:', genres);
+        console.log('[RECOMMENDATION] Combined tags:', tags.slice(0, 10), '...');
         
-        console.log('[RECOMMENDATION] Mapped watch history to model indices:', watchHistoryIndices);
-        debugInfo.animeIdMapSuccess = watchHistoryIndices.length > 0;
-        
-        if (watchHistoryIndices.length > 0) {
-          // Get recommendation candidates (anime not in watch history)
-          // We'll take the model's anime indices and exclude ones the user has already watched
-          const watchedIndices = new Set(watchHistoryIndices.map(item => item.modelIdx));
-          candidateAnimeIndices = Object.keys(idxToAnime)
-            .map(key => parseInt(key))
-            .filter(idx => !watchedIndices.has(idx))
-            .slice(0, maxCandidates); // CHANGED: Limit to maxCandidates for testing
-        } else {
-          console.log('[RECOMMENDATION] No watch history items could be mapped to model indices, using default candidates');
-        }
+        debugInfo.genresUsed = genres;
+        debugInfo.tagsUsed = tags.slice(0, 10);
       } else {
+        // Fallback if we couldn't get any genres or tags
+        console.log('[RECOMMENDATION] Could not fetch anime details, using fallback genres and tags');
         genres = preferredGenres;
         tags = preferredTags;
       }
       
-      // Map genres and tags to indices the model understands
-      const genreIndices = genres
-        .map(genre => {
-          // Try multiple variations of the genre name to increase chances of mapping
-          const variations = [
-            genre.toLowerCase(),
-            genre.toUpperCase(),
-            genre,
-            genre.toLowerCase().replace(/[-\s]/g, ''),
-            genre.toLowerCase().trim()
-          ];
-          
-          let idx = null;
-          for (const variation of variations) {
-            if (genreToIdx[variation] !== undefined) {
-              idx = genreToIdx[variation];
-              console.log(`[RECOMMENDATION] Successfully mapped genre "${genre}" using format "${variation}" → ${idx}`);
-              break;
-            }
-          }
-          
-          if (idx === null) {
-            // Log available genres for debugging
-            if (genres.indexOf(genre) === 0) { // Only do this once to avoid spam
-              console.log('[RECOMMENDATION] Available genres in model:', Object.keys(genreToIdx).slice(0, 20));
-            }
-            console.log(`[RECOMMENDATION] Could not map genre: "${genre}"`);
-          }
-          
-          return idx;
-        })
-        .filter(idx => idx !== null)
-        .slice(0, metadata.max_genres);
+      // Map watched anime indices and save for debugging
+      debugInfo.mappedAnimeIds = userEmbedding.watchedIndices;
+      debugInfo.animeIdMapSuccess = debugInfo.mappedAnimeIds.length > 0;
       
-      // If we don't have enough mapped genres, add some default ones
-      if (genreIndices.length === 0) {
-        console.log('[RECOMMENDATION] No genres could be mapped, using fallback genre indices');
-        
-        // Try to use some common genres that are likely to be in the model
-        const commonGenres = ['action', 'adventure', 'comedy', 'drama', 'fantasy', 'romance', 'sci-fi'];
-        let foundGenres = false;
-        
-        for (const genre of commonGenres) {
-          const idx = genreToIdx[genre];
-          if (idx !== undefined) {
-            genreIndices.push(idx);
-            console.log(`[RECOMMENDATION] Added common genre "${genre}" → ${idx}`);
-            foundGenres = true;
-            if (genreIndices.length >= metadata.max_genres) break;
-          }
-        }
-        
-        // If still no genres found, fall back to default indices
-        if (!foundGenres) {
-          for (let i = 0; i < Math.min(preferredGenres.length, metadata.max_genres); i++) {
-            genreIndices.push(i % metadata.n_genres);
-          }
+      // Get ratings for all candidate anime
+      console.log(`[RECOMMENDATION] Running model inference on ${candidateAnimeIndices.length} candidates`);
+      
+      // Transform genres and tags to indices
+      const genreIndices: number[] = [];
+      for (const genre of genres) {
+        const genreIdx = genreToIdx[genre];
+        if (genreIdx !== undefined) {
+          genreIndices.push(genreIdx);
         }
       }
       
-      // Map tags to indices
-      const tagIndices = tags
-        .map(tag => {
-          // Try multiple variations of the tag name to increase chances of mapping
-          const variations = [
-            tag.toLowerCase(),
-            tag.toUpperCase(),
-            tag,
-            tag.toLowerCase().replace(/[-\s]/g, ''),
-            tag.toLowerCase().trim()
-          ];
-          
-          let idx = null;
-          for (const variation of variations) {
-            if (tagToIdx[variation] !== undefined) {
-              idx = tagToIdx[variation];
-              console.log(`[RECOMMENDATION] Successfully mapped tag "${tag}" using format "${variation}" → ${idx}`);
-              break;
-            }
-          }
-          
-          if (idx === null) {
-            // Log available tags for debugging, but only for the first tag to avoid spam
-            if (tags.indexOf(tag) === 0) {
-              console.log('[RECOMMENDATION] Available tags in model (sample):', Object.keys(tagToIdx).slice(0, 20));
-            }
-            console.log(`[RECOMMENDATION] Could not map tag: "${tag}"`);
-          }
-          
-          return idx;
-        })
-        .filter(idx => idx !== null)
-        .slice(0, metadata.max_tags);
-      
-      // If we don't have enough mapped tags, add some default ones
-      if (tagIndices.length === 0) {
-        console.log('[RECOMMENDATION] No tags could be mapped, using fallback tag indices');
-        
-        // Try to use some common tags that are likely to be in the model
-        const commonTags = ['shounen', 'action', 'magic', 'fantasy', 'adventure', 'drama', 'comedy'];
-        let foundTags = false;
-        
-        for (const tag of commonTags) {
-          const idx = tagToIdx[tag];
-          if (idx !== undefined) {
-            tagIndices.push(idx);
-            console.log(`[RECOMMENDATION] Added common tag "${tag}" → ${idx}`);
-            foundTags = true;
-            if (tagIndices.length >= metadata.max_tags) break;
-          }
-        }
-        
-        // If still no tags found, fall back to default indices
-        if (!foundTags) {
-          for (let i = 0; i < Math.min(preferredTags.length, metadata.max_tags); i++) {
-            tagIndices.push(i % metadata.n_tags);
-          }
+      // Handle tags - we might have too many so we need to filter
+      const tagIndices: number[] = [];
+      for (const tag of tags) {
+        const tagIdx = tagToIdx[tag];
+        if (tagIdx !== undefined) {
+          tagIndices.push(tagIdx);
         }
       }
       
-      console.log('[RECOMMENDATION] Running inference with:', {
-        userIndex,
-        candidateCount: candidateAnimeIndices.length,
+      // Get ratings for candidate anime
+      const candidateRatings = await runModelInference(
+        userIndex, 
+        candidateAnimeIndices, 
         genreIndices,
         tagIndices
-      });
-      
-      // MODIFIED: Use batch inference instead of individual calls
-      // Run model inference through our adapter
-      console.log('[RECOMMENDATION] Starting batch inference for', candidateAnimeIndices.length, 'candidates');
-      const scores = await runModelInference(
-        userIndex,
-        candidateAnimeIndices,
-        genreIndices as number[],
-        tagIndices as number[]
       );
       
-      console.log('[RECOMMENDATION] Got scores, creating recommendations');
-      console.log(`[RECOMMENDATION] Score sample (first 5): ${scores.slice(0, 5).join(', ')}`);
+      // Collect results and create full records with Anilist ID and title
+      interface CandidateResult {
+        animeIdx: number;
+        anilistId: number;
+        title: string;
+        score: number;
+        averageScore?: number;
+        cover_image?: string;
+        genres?: string[];
+      }
       
-      // Create array of [index, score] pairs
-      const indexedScores = candidateAnimeIndices.map((animeIndex, i) => [animeIndex, scores[i]]);
+      const candidateResults: CandidateResult[] = [];
       
-      // Sort by score in descending order
-      indexedScores.sort((a, b) => b[1] - a[1]);
-      
-      // Take top N results
-      const topN = indexedScores.slice(0, limit);
-      
-      // Map back to anime IDs and create result objects
-      const recommendations = await Promise.all(topN.map(async ([index, score]) => {
-        const animeId = idxToAnime[index.toString()] || `unknown-${index}`;
-        // Convert to number if possible
-        const numericId = parseInt(animeId, 10) || index;
+      for (let i = 0; i < candidateAnimeIndices.length; i++) {
+        const animeIdx = candidateAnimeIndices[i];
+        const rating = candidateRatings[i];
         
-        // Attempt to get more details from AniList for each recommendation
-        let title = `Anime ${animeId}`;
-        let coverImage = undefined;
-        let animeGenres = undefined;
-        
-        // First check if it matches something in watch history
-        const matchingHistoryItem = userWatchHistory.find(
-          item => item.anilist_id.toString() === animeId || item.anilist_id === numericId
-        );
-        
-        if (matchingHistoryItem) {
-          title = matchingHistoryItem.title;
-          coverImage = matchingHistoryItem.cover_image;
-        } else {
-          // Try fetching from AniList
-          try {
-            const details = await getAnimeDetails(numericId);
-            if (details) {
-              title = details.title.english || details.title.romaji;
-              coverImage = details.coverImage.medium;
-              animeGenres = details.genres;
-            }
-          } catch (error) {
-            console.log(`[RECOMMENDATION] Could not fetch details for anime ${numericId}:`, error);
+        if (rating > 0) { // Skip negative ratings
+          // Get the anime ID using our direct mapping if available, otherwise fall back to the model mapping
+          let numericId: number;
+          
+          if (animeIdToAnilistId[animeIdx] !== undefined) {
+            numericId = animeIdToAnilistId[animeIdx];
+          } else {
+            // Get the anime ID from the idx using the model mapping
+            const animeId = idxToAnime[animeIdx.toString()];
+            
+            if (!animeId) continue; // Skip if no mapping
+            
+            // Extract the numeric ID from the string (might be prefixed)
+            numericId = parseInt(animeId.replace(/^(anilist-|anime-)?/, ''));
+          }
+          
+          // Check if this is in the negative preferences list
+          const isInNegativePreferences = negativePreferences.animeIds.includes(numericId);
+          
+          // Apply a penalty to anime in negative preferences
+          const adjustedRating = isInNegativePreferences ? rating * 0.5 : rating;
+          
+          // Check if this anime is in the watched list to avoid recommending it
+          const isWatched = debugInfo.watchedAnimeIds.includes(numericId);
+          
+          // Only include unwatched anime
+          if (!isWatched) {
+            candidateResults.push({
+              animeIdx,
+              anilistId: numericId,
+              title: `Anime ${numericId}`, // Placeholder, will be replaced with API data
+              score: adjustedRating,
+              averageScore: undefined,
+              cover_image: undefined,
+              genres: undefined
+            });
           }
         }
-        
-        return {
-          id: numericId,
-          title,
-          cover_image: coverImage,
-          score: score as number,
-          genres: animeGenres
-        };
-      }));
+      }
       
-      console.log('[RECOMMENDATION] Successfully created recommendations');
+      // Sort by score (highest first)
+      candidateResults.sort((a, b) => b.score - a.score);
+      
+      // Log the top results for debugging
+      console.log(`[RECOMMENDATION] Top ${Math.min(10, candidateResults.length)} candidates before enrichment:`);
+      candidateResults.slice(0, 10).forEach((result, index) => {
+        console.log(`  ${index + 1}. Anime ID: ${result.anilistId}, Score: ${result.score.toFixed(4)}`);
+      });
+      
+      // Limit to requested number of recommendations
+      const topResults = candidateResults.slice(0, limit);
+      
+      // Fetch details for each anime to enrich the recommendations
+      const enrichedResults: AnimeData[] = [];
+      const enrichmentPromises: Promise<void>[] = [];
+      
+      for (const result of topResults) {
+        enrichmentPromises.push((async () => {
+          try {
+            const details = await getAnimeDetails(result.anilistId);
+            
+            if (details) {
+              enrichedResults.push({
+                id: result.anilistId,
+                title: details.title.english || details.title.romaji || `Anime ${result.anilistId}`,
+                score: result.score,
+                averageScore: details.averageScore,
+                cover_image: details.coverImage?.large || details.coverImage?.medium,
+                genres: details.genres,
+                description: details.description,
+                _debugInfo: {
+                  userEmbedding: {
+                    dimension: userEmbedding.embeddingVector.length,
+                    sample: userEmbedding.embeddingVector.slice(0, 10)
+                  },
+                  negativePreferences: {
+                    genres: Array.from(negativePreferences.genres),
+                    tags: Array.from(negativePreferences.tags)
+                  }
+                }
+              });
+            } else {
+              // If we couldn't get details, still include the basic info
+              enrichedResults.push({
+                id: result.anilistId,
+                title: `Anime ${result.anilistId}`,
+                score: result.score,
+                _debugInfo: {
+                  userEmbedding: {
+                    dimension: userEmbedding.embeddingVector.length,
+                    sample: userEmbedding.embeddingVector.slice(0, 10)
+                  },
+                  negativePreferences: {
+                    genres: Array.from(negativePreferences.genres),
+                    tags: Array.from(negativePreferences.tags)
+                  }
+                }
+              });
+            }
+          } catch (error) {
+            console.error(`[RECOMMENDATION] Error fetching details for anime ${result.anilistId}:`, error);
+            
+            // Even if we have an error, still add a basic entry
+            enrichedResults.push({
+              id: result.anilistId,
+              title: `Anime ${result.anilistId}`,
+              score: result.score,
+              _debugInfo: {
+                userEmbedding: {
+                  dimension: userEmbedding.embeddingVector.length,
+                  sample: userEmbedding.embeddingVector.slice(0, 10)
+                },
+                negativePreferences: {
+                  genres: Array.from(negativePreferences.genres),
+                  tags: Array.from(negativePreferences.tags)
+                }
+              }
+            });
+          }
+        })());
+      }
+      
+      // Wait for all enrichment to complete
+      await Promise.all(enrichmentPromises);
+      
+      // Sort again in case the order was lost
+      enrichedResults.sort((a, b) => b.score - a.score);
       
       return {
-        recommendations,
+        recommendations: enrichedResults,
         status: 'success',
-        userWatchHistory, // Include watch history for debugging
-        debugInfo
-      };
-    } catch (error) {
-      console.error('[RECOMMENDATION] Error during model loading or inference:', error);
-      return {
-        recommendations: [],
-        status: 'error',
-        error: error instanceof Error ? error.message : 'Unknown error during model operation',
         userWatchHistory,
         debugInfo
       };
+    } catch (error) {
+      console.error('[RECOMMENDATION] Error while getting recommendations:', error);
+      return {
+        recommendations: [],
+        status: 'error',
+        error: error instanceof Error ? error.message : String(error)
+      };
     }
   } catch (error) {
-    console.error('[RECOMMENDATION] Error generating recommendations:', error);
+    console.error('[RECOMMENDATION] Uncaught error in getRecommendations:', error);
     return {
       recommendations: [],
       status: 'error',
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: error instanceof Error ? error.message : String(error)
     };
   }
 }

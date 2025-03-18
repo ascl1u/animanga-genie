@@ -4,7 +4,8 @@ import { useModelContext } from '@/context/ModelContext';
 import { logOnnxServiceState } from '@/services/onnxModelService';
 import { AnimeWatchHistoryItem } from '@/types/watchHistory';
 import { createClient } from '@/utils/supabase/client';
-import { getUserWatchHistory } from '@/services/watchHistoryService';
+import { getUserWatchHistory, WATCH_HISTORY_CHANGED_EVENT } from '@/services/watchHistoryService';
+import { collaborativeFilteringService } from '@/services/collaborativeFilteringService';
 
 interface UseRecommendationsOptions {
   userId?: string;
@@ -14,15 +15,24 @@ interface UseRecommendationsOptions {
   autoLoad?: boolean;
 }
 
-function debugLog(message: string): void {
-  console.log(`[HOOK] ${message}`);
-}
+// Helper function to create a hash of the watch history for comparison
+const createWatchHistoryHash = (history: AnimeWatchHistoryItem[]): string => {
+  return history
+    .map(item => `${item.anilist_id}-${item.rating}`)
+    .sort()
+    .join('|');
+};
+
+// Debug logging utility
+const debugLog = (message: string) => {
+  console.log(`[RECOMMENDATIONS] ${message}`);
+};
 
 export function useRecommendations({
   userId,
   preferredGenres = ['Action', 'Adventure'],
   preferredTags = ['magic', 'fantasy'],
-  limit = 10,
+  limit = 9,
   autoLoad = false, // Default to not loading automatically
 }: UseRecommendationsOptions = {}) {
   const { isModelLoaded, isModelLoading, loadModel, loadingProgress } = useModelContext();
@@ -34,17 +44,24 @@ export function useRecommendations({
     errorMessage: string;
     isInitialized: boolean; // Track if recommendations have been initialized
     loadAttempts: number; // Track number of load attempts
+    collaborativeFilteringEnabled: boolean; // Track if collaborative filtering is enabled
   }>({
     isLoading: false,
     isError: false,
     errorMessage: '',
     isInitialized: false,
-    loadAttempts: 0
+    loadAttempts: 0,
+    collaborativeFilteringEnabled: false
   });
 
   const [recommendations, setRecommendations] = useState<AnimeData[]>([]);
   const [watchHistory, setWatchHistory] = useState<AnimeWatchHistoryItem[]>([]);
   const [watchHistoryLoaded, setWatchHistoryLoaded] = useState<boolean>(false);
+  const [similarUsers, setSimilarUsers] = useState<{ userId: string, similarity: number }[]>([]);
+  // Track the hash of the current watch history to detect changes
+  const [watchHistoryHash, setWatchHistoryHash] = useState<string>('');
+  // Track if watch history has changed since last recommendation
+  const [watchHistoryChanged, setWatchHistoryChanged] = useState<boolean>(true);
 
   // Get current user ID if not provided
   const getUserId = useCallback(async () => {
@@ -65,6 +82,17 @@ export function useRecommendations({
       debugLog('Fetching watch history...');
       const history = await getUserWatchHistory();
       debugLog(`Fetched watch history: ${history.length} items`);
+      
+      // Create a hash of the new watch history
+      const newHash = createWatchHistoryHash(history);
+      
+      // Check if watch history has changed from the current one
+      if (newHash !== watchHistoryHash) {
+        debugLog('Watch history has changed, enabling new recommendations');
+        setWatchHistoryChanged(true);
+        setWatchHistoryHash(newHash);
+      }
+      
       setWatchHistory(history);
       setWatchHistoryLoaded(true);
       return history;
@@ -73,10 +101,16 @@ export function useRecommendations({
       setWatchHistoryLoaded(true);
       return [];
     }
-  }, []);
+  }, [watchHistoryHash]);
 
   // Memoized function to fetch recommendations
   const fetchRecommendations = useCallback(async (customLimit?: number) => {
+    // Check if watch history has changed since last recommendation
+    if (!watchHistoryChanged && status.isInitialized) {
+      debugLog('Watch history unchanged since last recommendation, skipping generation');
+      return;
+    }
+    
     const currentUserId = await getUserId();
     debugLog(`Using user ID: ${currentUserId}`);
 
@@ -122,6 +156,30 @@ export function useRecommendations({
     
     debugLog('Starting recommendation generation');
     
+    // Pre-train collaborative filtering model
+    try {
+      // Only attempt to train if we have watch history
+      if (watchHistory.length >= 5) {
+        debugLog('Pre-training collaborative filtering model...');
+        await collaborativeFilteringService.trainModel();
+        
+        // Get similar users to display in UI
+        const similarUsersResult = await collaborativeFilteringService.getSimilarUsers(currentUserId, 5);
+        setSimilarUsers(similarUsersResult);
+        
+        if (similarUsersResult.length > 0) {
+          debugLog(`Found ${similarUsersResult.length} similar users through collaborative filtering`);
+          setStatus(prev => ({
+            ...prev,
+            collaborativeFilteringEnabled: true
+          }));
+        }
+      }
+    } catch (error) {
+      debugLog(`Error pre-training collaborative filtering model: ${error instanceof Error ? error.message : String(error)}`);
+      // Continue with regular recommendations - this is just an enhancement
+    }
+    
     try {
       const result = await getRecommendations(
         currentUserId,
@@ -137,22 +195,35 @@ export function useRecommendations({
         // Save watch history if available
         if (result.userWatchHistory) {
           debugLog(`Received watch history with ${result.userWatchHistory.length} items`);
-          setWatchHistory(result.userWatchHistory);
+          const newHistory = result.userWatchHistory;
+          setWatchHistory(newHistory);
           setWatchHistoryLoaded(true);
+          
+          // Update the watch history hash and mark as unchanged
+          setWatchHistoryHash(createWatchHistoryHash(newHistory));
+          setWatchHistoryChanged(false);
         }
         
         // Log any debug info
         if (result.debugInfo) {
           debugLog(`Debug info: ${JSON.stringify(result.debugInfo, null, 2)}`);
+          
+          // Check if collaborative filtering was used
+          if (result.debugInfo.collaborativeFiltering?.used) {
+            setStatus(prev => ({
+              ...prev,
+              collaborativeFilteringEnabled: true
+            }));
+          }
         }
         
-        setStatus({
+        setStatus(prev => ({
+          ...prev,
           isLoading: false,
           isError: false,
           errorMessage: '',
-          isInitialized: true,
-          loadAttempts: status.loadAttempts
-        });
+          isInitialized: true
+        }));
       } else {
         debugLog(`Error in recommendation status: ${result.error}`);
         setStatus(prev => ({
@@ -173,7 +244,7 @@ export function useRecommendations({
         isInitialized: true,
       }));
     }
-  }, [getUserId, preferredGenres, preferredTags, limit, isModelLoaded, loadModel, status.loadAttempts]);
+  }, [getUserId, isModelLoaded, limit, loadModel, preferredGenres, preferredTags, status.isInitialized, watchHistory, watchHistoryChanged, watchHistoryHash]);
 
   // Effect to auto-load if specified
   useEffect(() => {
@@ -183,11 +254,25 @@ export function useRecommendations({
     }
   }, [autoLoad, fetchRecommendations, status.isInitialized, status.isLoading]);
 
-  // Effect to fetch watch history on mount
+  // Effect to fetch watch history on mount and when watch history changes
   useEffect(() => {
     if (!watchHistoryLoaded) {
       fetchWatchHistory();
     }
+    
+    // Listen for watch history change events
+    const handleWatchHistoryChange = () => {
+      debugLog('Watch history change event received');
+      fetchWatchHistory();
+    };
+    
+    // Add event listener
+    window.addEventListener(WATCH_HISTORY_CHANGED_EVENT, handleWatchHistoryChange);
+    
+    // Clean up
+    return () => {
+      window.removeEventListener(WATCH_HISTORY_CHANGED_EVENT, handleWatchHistoryChange);
+    };
   }, [fetchWatchHistory, watchHistoryLoaded]);
 
   return {
@@ -204,5 +289,8 @@ export function useRecommendations({
     refreshRecommendations: fetchRecommendations,
     hasWatchHistory: watchHistory.length > 0,
     isWatchHistoryLoaded: watchHistoryLoaded,
+    isCollaborativeFilteringEnabled: status.collaborativeFilteringEnabled,
+    similarUsers,
+    watchHistoryChanged
   };
 } 

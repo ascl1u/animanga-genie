@@ -312,8 +312,8 @@ export default function RecommendationsPage() {
       {recommendations.length > 0 && !isLoading && !isError && (
         <>
           <div className="mb-6">
-            <h2 className="text-2xl font-semibold text-gray-800 mb-2">
-              Your Top {recommendations.length} Recommendations
+            <h2 className="text-2xl font-semibold mb-2">
+              Your Top Recommendations
             </h2>
             <p className="text-gray-600">
               Based on {watchHistory.length} anime in your watch history
@@ -324,7 +324,7 @@ export default function RecommendationsPage() {
                   className="flex justify-between items-center cursor-pointer"
                   onClick={() => setShowWatchHistory(!showWatchHistory)}
                 >
-                  <p className="font-medium text-blue-700">Recommending anime similar to:</p>
+                  <p className="font-medium text-blue-700">Recommending anime based on:</p>
                   <div className="text-blue-700">
                     {showWatchHistory ? '▲' : '▼'}
                   </div>

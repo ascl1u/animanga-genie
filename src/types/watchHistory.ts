@@ -15,6 +15,7 @@ export interface UpdateWatchHistoryParams {
 }
 
 export interface WatchHistoryFormData {
+  id?: string;
   anilist_id: number;
   title: string;
   cover_image?: string;

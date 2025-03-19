@@ -67,6 +67,34 @@ export const GET_ANIME_DETAILS_QUERY = gql`
   }
 `;
 
+// GraphQL query for fetching user's anime list from AniList
+export const GET_USER_ANIME_LIST_QUERY = gql`
+  query GetUserAnimeList($username: String) {
+    MediaListCollection(userName: $username, type: ANIME) {
+      lists {
+        name
+        status
+        entries {
+          id
+          status
+          score
+          media {
+            id
+            title {
+              romaji
+              english
+              native
+            }
+            coverImage {
+              medium
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
 // Type for anime search result
 export type AnimeSearchResult = {
   id: number;
@@ -103,6 +131,30 @@ export interface AnimeDetails extends AnimeSearchResult {
   description: string;
 }
 
+// Type for user anime list from AniList
+export interface AnilistUserAnimeEntry {
+  id: number;
+  status: string;
+  score: number;
+  media: {
+    id: number;
+    title: {
+      romaji: string;
+      english: string;
+      native: string;
+    };
+    coverImage: {
+      medium: string;
+    };
+  };
+}
+
+export interface AnilistUserAnimeList {
+  name: string;
+  status: string;
+  entries: AnilistUserAnimeEntry[];
+}
+
 // Function to search for anime
 export const searchAnime = async (searchText: string): Promise<AnimeSearchResult[]> => {
   try {
@@ -135,5 +187,22 @@ export const getAnimeDetails = async (animeId: number): Promise<AnimeDetails | n
   } catch (error) {
     console.error(`[ANILIST] Error fetching anime details for ID ${animeId}:`, error);
     return null;
+  }
+};
+
+// Function to get user's anime list from AniList
+export const getUserAnimeList = async (username: string): Promise<AnilistUserAnimeList[]> => {
+  try {
+    console.log(`[ANILIST] Fetching anime list for user: ${username}`);
+    const { data } = await anilistClient.query({
+      query: GET_USER_ANIME_LIST_QUERY,
+      variables: { username },
+    });
+    
+    console.log(`[ANILIST] Received anime list for user: ${username}`);
+    return data.MediaListCollection.lists || [];
+  } catch (error) {
+    console.error(`[ANILIST] Error fetching anime list for user ${username}:`, error);
+    return [];
   }
 }; 

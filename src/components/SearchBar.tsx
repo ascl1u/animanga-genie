@@ -9,7 +9,7 @@ interface SearchBarProps {
 
 export default function SearchBar({ 
   onSearch,
-  placeholder = "Search by title, genre, or keyword..." 
+  placeholder = "Coming soon..." 
 }: SearchBarProps) {
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');

@@ -157,6 +157,20 @@ export default function RecommendationsPage() {
                       <p><strong>Tags:</strong> {recommendations[0]._debugInfo.negativePreferences.tags.slice(0, 5).join(', ')}{recommendations[0]._debugInfo.negativePreferences.tags.length > 5 ? '...' : ''}</p>
                     </div>
                   )}
+                  
+                  {/* Display related anime that were penalized */}
+                  {recommendations[0]._debugInfo.negativePreferences.relatedAnime && recommendations[0]._debugInfo.negativePreferences.relatedAnime.length > 0 && (
+                    <div className="ml-3 mt-1">
+                      <p><strong>Related Anime Penalties:</strong></p>
+                      <ul className="list-disc pl-4 text-sm">
+                        {recommendations[0]._debugInfo.negativePreferences.relatedAnime.map((anime, index) => (
+                          <li key={index}>
+                            {anime.title} (ID: {anime.id}) - Penalty: {(anime.penalty * 100).toFixed(0)}% - <span className="italic">{anime.reason}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               )}
               

@@ -28,6 +28,7 @@ export interface AnimeData {
     negativePreferences?: {
       genres?: string[];
       tags?: string[];
+      relatedAnime?: { id: number; title: string; penalty: number; reason: string }[];
     };
     collaborativeInfo?: {
       contributorCount: number;
@@ -51,6 +52,7 @@ export interface RecommendationResult {
     negativePreferences?: {
       genres?: string[];
       tags?: string[];
+      relatedAnimeIds?: {id: number, weight: number}[];
     };
     userEmbedding?: {
       dimension: number;
@@ -229,15 +231,17 @@ async function extractNegativePreferences(
   genres: Set<string>;
   tags: Set<string>;
   animeIds: number[];
+  relatedAnimeIds: Map<number, number>; // Related anime IDs with their penalty weight (0-1)
 }> {
   console.log(`[RECOMMENDATION] Extracting negative preferences with threshold ${threshold}...`);
   
   const negativeGenres = new Set<string>();
   const negativeTags = new Set<string>();
   const negativeAnimeIds: number[] = [];
+  const relatedAnimeIds = new Map<number, number>(); // Store related anime IDs with penalty weight
   
   if (!watchHistory || watchHistory.length === 0) {
-    return { genres: negativeGenres, tags: negativeTags, animeIds: negativeAnimeIds };
+    return { genres: negativeGenres, tags: negativeTags, animeIds: negativeAnimeIds, relatedAnimeIds };
   }
   
   // Get low-rated anime
@@ -245,7 +249,7 @@ async function extractNegativePreferences(
   console.log(`[RECOMMENDATION] Found ${lowRatedAnime.length} anime rated below ${threshold}/10`);
   
   if (lowRatedAnime.length === 0) {
-    return { genres: negativeGenres, tags: negativeTags, animeIds: negativeAnimeIds };
+    return { genres: negativeGenres, tags: negativeTags, animeIds: negativeAnimeIds, relatedAnimeIds };
   }
   
   // Process each low-rated anime
@@ -259,9 +263,11 @@ async function extractNegativePreferences(
         const animeDetails = await getAnimeDetails(item.anilist_id);
         
         if (animeDetails) {
-          // Calculate negative weight based on how low the rating is
-          // Scale is 1-10, with 5 being neutral. Lower ratings have more negative weight.
-          const negativeWeight = (threshold - item.rating) / threshold; // 0 to 1 scale
+          // Enhanced: Calculate negative weight with exponential penalty for lower ratings
+          // For ratings from 1-5, we exponentially increase the penalty
+          // Example: Rating 1 = 0.85, Rating 2 = 0.7, Rating 3 = 0.5, Rating 4 = 0.3, Rating 5 = 0.1
+          const normalizedRating = item.rating / 10; // 0.1-0.5 for ratings 1-5
+          const negativeWeight = Math.pow(1 - normalizedRating, 2); // Exponential penalty
           
           if (negativeWeight > 0) {
             // Add weight-filtered genres to negative set
@@ -272,9 +278,12 @@ async function extractNegativePreferences(
             // Add most influential tags to negative set
             const sortedTags = [...animeDetails.tags]
               .sort((a, b) => b.rank - a.rank)
-              .slice(0, Math.ceil(5 * negativeWeight)); // More tags from lowest rated anime
+              .slice(0, Math.ceil(6 * negativeWeight)); // More tags from lowest rated anime
             
             sortedTags.forEach(tag => negativeTags.add(tag.name));
+            
+            // Find related anime (sequels, prequels, etc.)
+            await findRelatedAnime(item.anilist_id, relatedAnimeIds, negativeWeight);
             
             console.log(`[RECOMMENDATION] Added negative preferences from ${animeDetails.title.english || animeDetails.title.romaji} (${item.rating}/10): ${genreLimit} genres, ${sortedTags.length} tags, weight: ${negativeWeight.toFixed(2)}`);
           }
@@ -288,13 +297,171 @@ async function extractNegativePreferences(
   // Wait for all anime details to be fetched
   await Promise.all(animeDetailsPromises);
   
-  console.log(`[RECOMMENDATION] Extracted negative preferences: ${negativeGenres.size} genres, ${negativeTags.size} tags`);
+  console.log(`[RECOMMENDATION] Extracted negative preferences: ${negativeGenres.size} genres, ${negativeTags.size} tags, ${relatedAnimeIds.size} related anime`);
   
   return {
     genres: negativeGenres,
     tags: negativeTags,
-    animeIds: negativeAnimeIds
+    animeIds: negativeAnimeIds,
+    relatedAnimeIds
   };
+}
+
+/**
+ * Find anime related to a given anime ID using pattern matching and API data
+ * This helps identify sequels, prequels, and series related to low-rated anime
+ * @param animeId The source anime ID
+ * @param relatedAnimeIds Map to store related anime IDs with penalty weights
+ * @param penaltyWeight The penalty weight to apply to related anime
+ */
+async function findRelatedAnime(
+  animeId: number,
+  relatedAnimeIds: Map<number, number>,
+  penaltyWeight: number
+): Promise<void> {
+  try {
+    console.log(`[RECOMMENDATION] Finding related anime for ${animeId}...`);
+    
+    // First, try to get relation data directly from AniList API
+    const animeDetails = await getAnimeDetails(animeId);
+    
+    if (animeDetails?.relations?.edges && animeDetails.relations.edges.length > 0) {
+      console.log(`[RECOMMENDATION] Found ${animeDetails.relations.edges.length} related anime from AniList API for ${animeId}`);
+      
+      // Process direct relations from AniList
+      for (const relation of animeDetails.relations.edges) {
+        if (relation.node && relation.node.id && relation.node.type === 'ANIME') {
+          const relatedAnimeId = relation.node.id;
+          // Skip if it's the same anime or already in our map
+          if (relatedAnimeId === animeId || relatedAnimeIds.has(relatedAnimeId)) {
+            continue;
+          }
+          
+          let relationPenalty = penaltyWeight;
+          
+          // Adjust penalty based on relation type
+          switch (relation.relationType) {
+            case 'SEQUEL':
+            case 'PREQUEL': 
+              // Direct sequels/prequels get a higher penalty (90% of original)
+              relationPenalty = penaltyWeight * 0.9;
+              break;
+            case 'SIDE_STORY':
+            case 'SPIN_OFF':
+            case 'ALTERNATIVE':
+              // Side stories get a moderate penalty (70% of original)
+              relationPenalty = penaltyWeight * 0.7;
+              break;
+            default:
+              // Other relations get a lower penalty (50% of original)
+              relationPenalty = penaltyWeight * 0.5;
+          }
+          
+          // Add to our map
+          relatedAnimeIds.set(relatedAnimeId, relationPenalty);
+          console.log(`[RECOMMENDATION] Found related anime from API: ${relation.node.title?.english || relation.node.title?.romaji} (ID: ${relatedAnimeId}) relation: ${relation.relationType} with penalty ${relationPenalty.toFixed(2)}`);
+        }
+      }
+      
+      // If we found relations from the API, we can return
+      if (relatedAnimeIds.size > 0) {
+        return;
+      }
+    }
+    
+    // Fallback to title-based matching if API relation data is not available
+    console.log(`[RECOMMENDATION] No relation data from API for ${animeId}, falling back to title matching`);
+    
+    // Use Supabase for title matching
+    const supabase = createClient();
+    
+    // Fetch the source anime title for pattern matching
+    const { data: sourceAnime, error: sourceError } = await supabase
+      .from('anime')
+      .select('anilist_id, title')
+      .eq('anilist_id', animeId)
+      .single();
+    
+    if (sourceError || !sourceAnime) {
+      console.log(`[RECOMMENDATION] Could not find source anime ${animeId} for relation detection`);
+      return;
+    }
+    
+    // Extract series name for pattern matching
+    const sourceTitle = sourceAnime.title?.english || sourceAnime.title?.romaji || '';
+    if (!sourceTitle) return;
+    
+    // Remove season numbers, "season", "part" from title to get base series name
+    const baseSeriesName = sourceTitle
+      .replace(/\s+(season|series|part)\s+\d+/i, '')
+      .replace(/\s+\d+(st|nd|rd|th)\s+season/i, '')
+      .replace(/\s+S\d+/i, '')
+      .replace(/\s+II|III|IV|V|VI/i, '')
+      .replace(/\s+\d+$/i, '')
+      .trim();
+    
+    if (baseSeriesName.length < 4) return; // Too short to be meaningful
+    
+    // Find potential related anime with similar titles
+    const { data: relatedAnime, error: relatedError } = await supabase
+      .from('anime')
+      .select('anilist_id, title')
+      .neq('anilist_id', animeId)
+      .order('popularity', { ascending: false })
+      .limit(50); // Limit to avoid excessive processing
+    
+    if (relatedError || !relatedAnime || relatedAnime.length === 0) {
+      console.log(`[RECOMMENDATION] No potential related anime found for ${animeId}`);
+      return;
+    }
+    
+    // Calculate title similarity and detect related anime
+    for (const anime of relatedAnime) {
+      const relatedTitle = anime.title?.english || anime.title?.romaji || '';
+      if (!relatedTitle) continue;
+      
+      // Skip if already in our map
+      if (relatedAnimeIds.has(anime.anilist_id)) {
+        continue;
+      }
+      
+      // Check if titles are related (either contains the other or they share significant words)
+      const isTitleRelated = 
+        // Direct series relationship
+        relatedTitle.includes(baseSeriesName) || 
+        baseSeriesName.includes(relatedTitle) ||
+        // Same franchise different naming
+        (getSignificantWords(baseSeriesName).some(word => 
+          relatedTitle.toLowerCase().includes(word.toLowerCase())) &&
+         baseSeriesName.length > 8);
+      
+      if (isTitleRelated) {
+        // Apply slightly reduced penalty to related anime (70% of original penalty)
+        const relatedPenalty = penaltyWeight * 0.7;
+        relatedAnimeIds.set(anime.anilist_id, relatedPenalty);
+        console.log(`[RECOMMENDATION] Found related anime by title: ${relatedTitle} (ID: ${anime.anilist_id}) with penalty ${relatedPenalty.toFixed(2)}`);
+      }
+    }
+  } catch (error) {
+    console.error(`[RECOMMENDATION] Error finding related anime for ${animeId}:`, error);
+  }
+}
+
+/**
+ * Extract significant words from a title for matching
+ * @param title The anime title
+ * @returns Array of significant words
+ */
+function getSignificantWords(title: string): string[] {
+  // Remove common words that don't help with matching
+  const commonWords = ['the', 'a', 'an', 'of', 'in', 'on', 'at', 'and', 'or', 'to'];
+  
+  return title.split(/\s+/)
+    .filter(word => 
+      word.length > 3 && // Only words longer than 3 characters
+      !commonWords.includes(word.toLowerCase()) && // Not common words
+      !/^\d+$/.test(word) // Not just numbers
+    );
 }
 
 /**
@@ -373,50 +540,66 @@ export async function getRecommendations(
     console.log('[RECOMMENDATION] Starting getRecommendations...');
     logOnnxServiceState();
     
-    // Fetch user's watch history
-    console.log('[RECOMMENDATION] Fetching user watch history...');
+    // Prepare the debug info object
+    const debugInfo: RecommendationResult['debugInfo'] = {
+      watchedAnimeIds: [],
+      mappedAnimeIds: [],
+      animeIdMapSuccess: false,
+      genresUsed: [],
+      tagsUsed: [],
+      negativePreferences: {
+        genres: [],
+        tags: []
+      },
+      userEmbedding: {
+        dimension: 0,
+        sample: [],
+        method: 'unknown'
+      },
+      collaborativeFiltering: {
+        used: false
+      }
+    };
+
+    // Check if the model is loaded
+    if (!isModelLoaded()) {
+      console.log('[RECOMMENDATION] Model not loaded, loading now...');
+      await loadModel();
+    }
+
+    // Get the user's watch history
+    console.log(`[RECOMMENDATION] Getting watch history for user ${userId}...`);
     const userWatchHistory = await getUserWatchHistory();
-    console.log(`[RECOMMENDATION] Found ${userWatchHistory.length} items in user watch history`);
     
-    // Log watch history details early for debugging
-    if (userWatchHistory.length > 0) {
-      console.log('[RECOMMENDATION] Watch history details:', 
-        userWatchHistory.map(item => ({
-          anilist_id: item.anilist_id,
-          title: item.title,
-          rating: item.rating
-        }))
-      );
+    if (!userWatchHistory || userWatchHistory.length === 0) {
+      console.log('[RECOMMENDATION] No watch history found, falling back to preferred genres');
+      // Fallback implementation for users with no watch history would go here
+      return {
+        recommendations: [],
+        status: 'error',
+        error: 'No watch history found and genre-based recommendations not implemented yet',
+        debugInfo
+      };
     }
     
-    // Debug info to return with result
-    const debugInfo: {
-      watchedAnimeIds: number[];
-      mappedAnimeIds: number[];
-      animeIdMapSuccess: boolean;
-      mappingKeys?: string[];
-      genresUsed?: string[];
-      tagsUsed?: string[];
-      negativePreferences?: {
-        genres?: string[];
-        tags?: string[];
-      };
-      userEmbedding?: {
-        dimension: number;
-        sample?: number[];
-        method?: string;
-      };
-      collaborativeFiltering?: {
-        used: boolean;
-        similarUserCount?: number;
-        blendedRecommendations?: boolean;
-      };
-    } = {
-      watchedAnimeIds: userWatchHistory.map(item => item.anilist_id),
-      mappedAnimeIds: [] as number[],
-      animeIdMapSuccess: false
+    console.log(`[RECOMMENDATION] Found ${userWatchHistory.length} items in watch history`);
+    debugInfo.watchedAnimeIds = userWatchHistory.map(item => item.anilist_id);
+    
+    // Extract negative preferences (low-rated anime)
+    const negativePreferences = await extractNegativePreferences(userWatchHistory);
+    
+    // Update debug info with negative preferences
+    debugInfo.negativePreferences = {
+      genres: Array.from(negativePreferences.genres),
+      tags: Array.from(negativePreferences.tags)
     };
     
+    // Add related anime IDs to debug info if available
+    if (negativePreferences.relatedAnimeIds.size > 0) {
+      debugInfo.negativePreferences.relatedAnimeIds = Array.from(negativePreferences.relatedAnimeIds.entries())
+        .map(([id, weight]) => ({ id, weight }));
+    }
+
     // Check if model is already loaded to avoid reloading
     const modelIsLoaded = isModelLoaded();
     console.log(`[RECOMMENDATION] Model already loaded: ${modelIsLoaded}`);
@@ -543,127 +726,6 @@ export async function getRecommendations(
       // Use a default user index of 0 since we don't have user mappings
       // This will be a fallback if we can't use our embedding approach
       const userIndex = 0;
-      
-      // Extract negative preferences from low-rated anime
-      const negativePreferences = await extractNegativePreferences(userWatchHistory);
-      
-      // Save negative preferences for debugging
-      debugInfo.negativePreferences = {
-        genres: Array.from(negativePreferences.genres),
-        tags: Array.from(negativePreferences.tags)
-      };
-      
-      // If we have collaborative recommendations, process and return them directly
-      if (collaborativeRecommendations && collaborativeRecommendations.length > 0) {
-        console.log('[RECOMMENDATION] Processing collaborative filtering recommendations');
-        
-        // Filter out anime that the user has already watched
-        const watchedAnimeIds = new Set(userWatchHistory.map(item => item.anilist_id));
-        const filteredRecommendations = collaborativeRecommendations.filter(
-          rec => !watchedAnimeIds.has(rec.animeId)
-        );
-        
-        // Limit to the requested number
-        const topRecommendations = filteredRecommendations.slice(0, limit);
-        
-        // Fetch details for each anime
-        const enrichedResults: AnimeData[] = [];
-        const enrichmentPromises: Promise<void>[] = [];
-        
-        for (const recommendation of topRecommendations) {
-          enrichmentPromises.push((async () => {
-            try {
-              const details = await getAnimeDetails(recommendation.animeId);
-              
-              if (details) {
-                // Create string listing top contributors
-                const contributorInfo = recommendation.contributors
-                  .slice(0, 3)
-                  .map(c => `User rated ${c.rating}/10 (similarity: ${(c.weight * 100).toFixed(0)}%)`)
-                  .join(', ');
-                
-                enrichedResults.push({
-                  id: recommendation.animeId,
-                  title: details.title.english || details.title.romaji || `Anime ${recommendation.animeId}`,
-                  score: recommendation.score / 10, // Convert to 0-1 scale
-                  averageScore: details.averageScore,
-                  cover_image: details.coverImage?.large || details.coverImage?.medium,
-                  genres: details.genres,
-                  description: details.description,
-                  _debugInfo: {
-                    userEmbedding: {
-                      dimension: userEmbedding.embeddingVector.length,
-                      sample: userEmbedding.embeddingVector.slice(0, 10)
-                    },
-                    negativePreferences: {
-                      genres: Array.from(negativePreferences.genres),
-                      tags: Array.from(negativePreferences.tags)
-                    },
-                    collaborativeInfo: {
-                      contributorCount: recommendation.contributors.length,
-                      topContributors: contributorInfo
-                    }
-                  }
-                });
-              } else {
-                // If we couldn't get details, still include the basic info
-                enrichedResults.push({
-                  id: recommendation.animeId,
-                  title: `Anime ${recommendation.animeId}`,
-                  score: recommendation.score / 10, // Convert to 0-1 scale
-                  _debugInfo: {
-                    userEmbedding: {
-                      dimension: userEmbedding.embeddingVector.length,
-                      sample: userEmbedding.embeddingVector.slice(0, 10)
-                    },
-                    negativePreferences: {
-                      genres: Array.from(negativePreferences.genres),
-                      tags: Array.from(negativePreferences.tags)
-                    },
-                    collaborativeInfo: {
-                      contributorCount: recommendation.contributors.length
-                    }
-                  }
-                });
-              }
-            } catch (error) {
-              console.error(`[RECOMMENDATION] Error fetching details for anime ${recommendation.animeId}:`, error);
-              
-              // Even if we have an error, still add a basic entry
-              enrichedResults.push({
-                id: recommendation.animeId,
-                title: `Anime ${recommendation.animeId}`,
-                score: recommendation.score / 10, // Convert to 0-1 scale
-                _debugInfo: {
-                  userEmbedding: {
-                    dimension: userEmbedding.embeddingVector.length,
-                    sample: userEmbedding.embeddingVector.slice(0, 10)
-                  },
-                  negativePreferences: {
-                    genres: Array.from(negativePreferences.genres),
-                    tags: Array.from(negativePreferences.tags)
-                  }
-                }
-              });
-            }
-          })());
-        }
-        
-        // Wait for all enrichment to complete
-        await Promise.all(enrichmentPromises);
-        
-        // Sort again in case the order was lost
-        enrichedResults.sort((a, b) => b.score - a.score);
-        
-        return {
-          recommendations: enrichedResults,
-          status: 'success',
-          userWatchHistory,
-          debugInfo
-        };
-      }
-      
-      // Continue with existing model-based recommendation logic...
       
       // Get the total number of anime in the model
       const totalAnimeCount = Object.keys(idxToAnime).length;
@@ -907,8 +969,18 @@ export async function getRecommendations(
           // Check if this is in the negative preferences list
           const isInNegativePreferences = negativePreferences.animeIds.includes(numericId);
           
-          // Apply a penalty to anime in negative preferences
-          const adjustedRating = isInNegativePreferences ? rating * 0.5 : rating;
+          // Check if this is related to a negative preference anime
+          const relatedPenalty = negativePreferences.relatedAnimeIds.get(numericId) || 0;
+          
+          // Apply an appropriate penalty based on:
+          // 1. Direct negative preference: 50% penalty (existing)
+          // 2. Related to negative anime: variable penalty based on relationship strength
+          let adjustedRating = rating;
+          if (isInNegativePreferences) {
+            adjustedRating *= 0.5; // Original 50% penalty for direct matches
+          } else if (relatedPenalty > 0) {
+            adjustedRating *= (1 - relatedPenalty); // Variable penalty for related anime
+          }
           
           // Check if this anime is in the watched list to avoid recommending it
           const isWatched = debugInfo.watchedAnimeIds.includes(numericId);
@@ -950,12 +1022,33 @@ export async function getRecommendations(
             const details = await getAnimeDetails(result.anilistId);
             
             if (details) {
+              // Add any related anime info for debugging
+              const relatedAnimeDebugInfo: { id: number; title: string; penalty: number; reason: string }[] = [];
+              
+              // If this anime had a penalty applied, note it
+              if (negativePreferences.animeIds.includes(result.anilistId)) {
+                relatedAnimeDebugInfo.push({
+                  id: result.anilistId,
+                  title: details.title.english || details.title.romaji,
+                  penalty: 0.5, // Direct match penalty
+                  reason: "Direct low rating"
+                });
+              } else if (negativePreferences.relatedAnimeIds.has(result.anilistId)) {
+                relatedAnimeDebugInfo.push({
+                  id: result.anilistId,
+                  title: details.title.english || details.title.romaji,
+                  penalty: negativePreferences.relatedAnimeIds.get(result.anilistId) || 0,
+                  reason: "Related to low-rated anime"
+                });
+              }
+              
+              // Create the enriched result with debug info
               enrichedResults.push({
                 id: result.anilistId,
                 title: details.title.english || details.title.romaji || `Anime ${result.anilistId}`,
                 score: result.score,
                 averageScore: details.averageScore,
-                cover_image: details.coverImage?.large || details.coverImage?.medium,
+                cover_image: details.coverImage.large || details.coverImage.medium,
                 genres: details.genres,
                 description: details.description,
                 _debugInfo: {
@@ -965,7 +1058,8 @@ export async function getRecommendations(
                   },
                   negativePreferences: {
                     genres: Array.from(negativePreferences.genres),
-                    tags: Array.from(negativePreferences.tags)
+                    tags: Array.from(negativePreferences.tags),
+                    relatedAnime: relatedAnimeDebugInfo
                   }
                 }
               });

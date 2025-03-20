@@ -63,6 +63,31 @@ export const GET_ANIME_DETAILS_QUERY = gql`
       duration
       status
       description
+      relations {
+        edges {
+          id
+          relationType
+          node {
+            id
+            title {
+              romaji
+              english
+            }
+            type
+            format
+          }
+        }
+      }
+      studios {
+        edges {
+          id
+          isMain
+          node {
+            id
+            name
+          }
+        }
+      }
     }
   }
 `;
@@ -129,6 +154,31 @@ export interface AnimeDetails extends AnimeSearchResult {
   duration: number;
   status: string;
   description: string;
+  relations?: {
+    edges: {
+      id: number;
+      relationType: string; // PREQUEL, SEQUEL, SIDE_STORY, etc.
+      node: {
+        id: number;
+        title: {
+          romaji: string;
+          english: string;
+        };
+        type: string;
+        format: string;
+      };
+    }[];
+  };
+  studios?: {
+    edges: {
+      id: number;
+      isMain: boolean;
+      node: {
+        id: number;
+        name: string;
+      };
+    }[];
+  };
 }
 
 // Type for user anime list from AniList

@@ -1,6 +1,6 @@
 import { ApolloClient, InMemoryCache, HttpLink, gql } from '@apollo/client';
 
-// Create an Apollo Client instance
+// Create an Apollo Client instance with proper cache configuration
 export const anilistClient = new ApolloClient({
   link: new HttpLink({
     uri: '/api/anilist',
@@ -9,7 +9,21 @@ export const anilistClient = new ApolloClient({
       'Accept': 'application/json',
     }
   }),
-  cache: new InMemoryCache(),
+  cache: new InMemoryCache({
+    typePolicies: {
+      Page: {
+        // Tell Apollo this type doesn't have a key field and shouldn't be normalized
+        keyFields: false,
+        // Fields that return non-normalized objects
+        fields: {
+          media: {
+            // Don't merge arrays of media, replace them
+            merge: false
+          }
+        }
+      }
+    }
+  }),
 });
 
 // GraphQL query for searching anime using gql tag

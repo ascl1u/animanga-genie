@@ -534,7 +534,6 @@ export async function getRecommendations(
   limit: number = 10
 ): Promise<RecommendationResult> {
   try {
-    console.log('[RECOMMENDATION] Starting getRecommendations...');
     logOnnxServiceState();
     
     // Prepare the debug info object
@@ -564,23 +563,41 @@ export async function getRecommendations(
       await loadModel();
     }
 
-    // Get the user's watch history based on authentication status
-    console.log(`[RECOMMENDATION] Getting watch history for user ${userId}...`);
-    
-    // Check if user is authenticated
+    // Check for user authentication status
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
     
-    // Get watch history from appropriate source
-    let userWatchHistory;
+    // Log authentication status and userId for debugging
+    console.log(`[RECOMMENDATION] User authentication check: user present=${!!user}, userId passed=${userId}`);
+    
+    // Get user watch history
+    let userWatchHistory: AnimeWatchHistoryItem[] | undefined;
+    
     if (user) {
       // Authenticated user - get from database
       console.log('[RECOMMENDATION] User is authenticated, getting watch history from database');
       userWatchHistory = await getUserWatchHistory();
+      console.log(`[RECOMMENDATION] Fetched ${userWatchHistory?.length || 0} items from database for user ${user.id}`);
     } else {
       // Non-authenticated user - get from localStorage
       console.log('[RECOMMENDATION] User is not authenticated, getting watch history from localStorage');
       userWatchHistory = getLocalWatchHistory();
+      console.log(`[RECOMMENDATION] Fetched ${userWatchHistory?.length || 0} items from localStorage`);
+    }
+    
+    console.log(`[RECOMMENDATION] User authentication status: ${user ? 'Authenticated' : 'Unauthenticated'}`);
+    console.log(`[RECOMMENDATION] Watch history source: ${user ? 'Database' : 'LocalStorage'}`);
+    console.log(`[RECOMMENDATION] Watch history count: ${userWatchHistory ? userWatchHistory.length : 0}`);
+    
+    // Log localStorage state for authenticated users (to check for potential leakage)
+    if (user && typeof window !== 'undefined') {
+      const localWatchHistory = localStorage.getItem('animanga-genie-watch-history');
+      const localRecommendations = localStorage.getItem('animanga-genie-recommendations');
+      console.log(`[RECOMMENDATION] For authenticated user, localStorage state: watchHistory=${!!localWatchHistory}, recommendations=${!!localRecommendations}`);
+    }
+    
+    if (userWatchHistory && userWatchHistory.length > 0) {
+      console.log(`[RECOMMENDATION] First watch history item: anilist_id=${userWatchHistory[0].anilist_id}, title=${userWatchHistory[0].title}`);
     }
     
     if (!userWatchHistory || userWatchHistory.length === 0) {

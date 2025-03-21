@@ -36,17 +36,17 @@ export default function RootLayout({
         <link rel="icon" href="/favicon.ico" />
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <ModelProvider>
-          <RecommendationsProvider>
-            <SimpleAuthProvider>
+        <SimpleAuthProvider>
+          <ModelProvider>
+            <RecommendationsProvider>
               <ClientNavigation />
               <Toaster position="top-right" />
               <main>
                 {children}
               </main>
-            </SimpleAuthProvider>
-          </RecommendationsProvider>
-        </ModelProvider>
+            </RecommendationsProvider>
+          </ModelProvider>
+        </SimpleAuthProvider>
       </body>
     </html>
   );

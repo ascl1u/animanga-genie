@@ -1,20 +1,19 @@
 'use client';
 
 import { useState } from 'react';
-import { useAuth } from '@/components/SimpleAuthProvider';
 import AnimeSearch from './AnimeSearch';
 import { toast } from 'react-hot-toast';
 import { type AnimeSearchResult } from '@/utils/anilistClient';
 import { WatchHistoryFormData, AnimeWatchHistoryItem } from '@/types/watchHistory';
-import { addToWatchHistory } from '@/services/watchHistoryService';
-import { addToLocalWatchHistory } from '@/services/localStorageService';
+import { dataAccessService } from '@/services/dataAccessService';
+import { AuthAwareWrapper } from '@/components/AuthAwareWrapper';
 
 interface WatchHistoryFormProps {
   onAnimeAdded?: (anime: AnimeWatchHistoryItem) => void;
 }
 
-export default function WatchHistoryForm({ onAnimeAdded }: WatchHistoryFormProps) {
-  const { user } = useAuth();
+// Inner component that contains the form logic
+function WatchHistoryFormInner({ onAnimeAdded }: WatchHistoryFormProps) {
   const [selectedAnime, setSelectedAnime] = useState<AnimeSearchResult | null>(null);
   const [rating, setRating] = useState<number>(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -52,16 +51,8 @@ export default function WatchHistoryForm({ onAnimeAdded }: WatchHistoryFormProps
         rating: rating
       };
       
-      let addedAnime;
-      
-      // If user is authenticated, use database storage, otherwise use local storage
-      if (user) {
-        // Call our service to add the anime to watch history in the database
-        addedAnime = await addToWatchHistory(formData);
-      } else {
-        // For non-authenticated users, store in localStorage
-        addedAnime = addToLocalWatchHistory(formData);
-      }
+      // Use dataAccessService to save the watch history item
+      const addedAnime = await dataAccessService.saveWatchHistory(formData);
       
       toast.success('Added to watch history!');
       
@@ -145,5 +136,14 @@ export default function WatchHistoryForm({ onAnimeAdded }: WatchHistoryFormProps
         </button>
       </form>
     </div>
+  );
+}
+
+// Main component wrapped with AuthAwareWrapper
+export default function WatchHistoryForm(props: WatchHistoryFormProps) {
+  return (
+    <AuthAwareWrapper>
+      <WatchHistoryFormInner {...props} />
+    </AuthAwareWrapper>
   );
 } 

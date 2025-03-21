@@ -49,19 +49,19 @@ export default function RecommendationsPage() {
     e.preventDefault();
     // Call the hook with limited count
     console.log(`Generating test recommendations with limit: ${testLimit}`);
-    generateRecommendations(testLimit, true);
+    generateRecommendations(testLimit);
   };
 
   // Handle normal recommendation generation
   const handleGenerateRecommendations = (e: MouseEvent) => {
     e.preventDefault();
-    generateRecommendations(undefined, true);
+    generateRecommendations();
   };
   
   // Handle retry
   const handleRetry = (e: MouseEvent) => {
     e.preventDefault();
-    refreshRecommendations(undefined, true);
+    refreshRecommendations();
   };
 
   // If no watch history, show message
@@ -239,6 +239,21 @@ export default function RecommendationsPage() {
           The more anime you rate, the better your recommendations will become!
         </p>
         
+        <div className="mb-4 p-3 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded">
+          <p className="font-medium flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 mr-2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+            </svg>
+            Important: How recommendations work
+          </p>
+          <p className="text-sm mt-1">
+            New recommendations are only generated when you add new anime or update ratings in your watch history. 
+            {isAuthenticated 
+              ? ' Your recommendations are saved to your account and can be accessed on any device.'
+              : ' Your watch history and recommendations are stored locally in your browser.'}
+          </p>
+        </div>
+        
         {isCollaborativeFilteringEnabled && (
           <div className="mb-4 p-3 bg-blue-50 border border-blue-200 text-blue-700 rounded">
             <p className="font-medium flex items-center">
@@ -270,7 +285,7 @@ export default function RecommendationsPage() {
             
             <button
               onClick={handleGenerateRecommendations}
-              disabled={isModelLoading || isLoading}
+              disabled={isModelLoading || isLoading || (isInitialized && !watchHistoryChanged)}
               className="px-6 py-3 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 
                         focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2
                         disabled:opacity-70 disabled:cursor-not-allowed transition-colors"
@@ -279,14 +294,17 @@ export default function RecommendationsPage() {
                 ? 'Loading Model...' 
                 : isLoading
                   ? 'Generating...'
-                  : isInitialized
-                    ? 'Regenerate Recommendations'
-                    : 'Generate Recommendations'}
+                  : isInitialized && !watchHistoryChanged
+                    ? 'Up to Date'
+                    : isInitialized
+                      ? 'Generate New Recommendations'
+                      : 'Generate Recommendations'}
             </button>
             
             {isInitialized && !watchHistoryChanged && (
               <p className="mt-2 text-sm text-amber-600">
-                No changes detected in your watch history. Regenerating will use the same data.
+                Your recommendations are up to date with your current watch history.
+                Add or rate more anime to get new recommendations.
               </p>
             )}
           </div>
@@ -392,8 +410,15 @@ export default function RecommendationsPage() {
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            Recommendations loaded from your saved preferences
+            {watchHistoryChanged 
+              ? 'Recommendations are being generated'
+              : 'Recommendations loaded from your saved preferences'}
           </p>
+          {!watchHistoryChanged && watchHistory.length > 0 && (
+            <p className="text-sm ml-7 mt-1">
+              Update your ratings or add more anime to get new recommendations.
+            </p>
+          )}
         </div>
       )}
       

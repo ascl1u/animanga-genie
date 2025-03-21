@@ -6,15 +6,17 @@ import { useAuth } from '@/components/SimpleAuthProvider';
 import { toast } from 'react-hot-toast';
 import { createClient } from '@/utils/supabase/client';
 import { AnimeWatchHistoryItem } from '@/types/watchHistory';
-import { getUserWatchHistory, updateWatchHistoryRating, deleteWatchHistoryItem } from '@/services/watchHistoryService';
-import { getLocalWatchHistory, updateLocalWatchHistoryRating, deleteLocalWatchHistoryItem } from '@/services/localStorageService';
+import { dataAccessService } from '@/services/dataAccessService';
+import { WATCH_HISTORY_CHANGED_EVENT } from '@/services/watchHistoryService';
+import { AuthAwareWrapper } from '@/components/AuthAwareWrapper';
 
 export interface WatchHistoryListRef {
   addAnime?: (anime: AnimeWatchHistoryItem) => void;
 }
 
-const WatchHistoryList = forwardRef<WatchHistoryListRef>((props, ref) => {
-  const { user } = useAuth();
+// Inner component that will be remounted when auth state changes
+const WatchHistoryListInner = forwardRef<WatchHistoryListRef>((props, ref) => {
+  const { user, isAuthenticated } = useAuth();
   const [watchHistory, setWatchHistory] = useState<AnimeWatchHistoryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -39,16 +41,8 @@ const WatchHistoryList = forwardRef<WatchHistoryListRef>((props, ref) => {
     setError(null);
     
     try {
-      let data: AnimeWatchHistoryItem[];
-      
-      if (user) {
-        // Get data from database for authenticated users
-        data = await getUserWatchHistory();
-      } else {
-        // Get data from localStorage for non-authenticated users
-        data = getLocalWatchHistory();
-      }
-      
+      // Use dataAccessService to fetch watch history regardless of auth state
+      const data = await dataAccessService.getWatchHistory();
       setWatchHistory(data);
     } catch (err) {
       console.error('Error fetching watch history:', err);
@@ -58,12 +52,12 @@ const WatchHistoryList = forwardRef<WatchHistoryListRef>((props, ref) => {
     } finally {
       setIsLoading(false);
     }
-  }, [user]);
+  }, []);
 
-  // Improved real-time subscription setup
+  // Improved real-time subscription setup - only for authenticated users
   useEffect(() => {
     // For authenticated users, set up real-time updates
-    if (user) {
+    if (isAuthenticated && user) {
       // Only set up subscription if we have a user
       const setupRealtimeSubscription = () => {
         // Clean up any existing subscription
@@ -135,22 +129,21 @@ const WatchHistoryList = forwardRef<WatchHistoryListRef>((props, ref) => {
           channelRef.current = null;
         }
       };
-    } else {
-      // For non-authenticated users, set up a localStorage event listener
-      const handleStorageChange = (e: StorageEvent) => {
-        if (e.key === 'animanga-genie-watch-history') {
-          fetchWatchHistory();
-        }
-      };
-      
-      // Listen for storage events from other tabs
-      window.addEventListener('storage', handleStorageChange);
-      
-      return () => {
-        window.removeEventListener('storage', handleStorageChange);
-      };
     }
-  }, [user, supabase, fetchWatchHistory]);
+    
+    // For both authenticated and non-authenticated users, listen for watch history changes
+    const handleWatchHistoryChange = () => {
+      console.log('Watch history changed event detected');
+      fetchWatchHistory();
+    };
+    
+    // Listen for custom watch history change events
+    window.addEventListener(WATCH_HISTORY_CHANGED_EVENT, handleWatchHistoryChange);
+    
+    return () => {
+      window.removeEventListener(WATCH_HISTORY_CHANGED_EVENT, handleWatchHistoryChange);
+    };
+  }, [isAuthenticated, user, supabase, fetchWatchHistory]);
 
   // Initial data fetch
   useEffect(() => {
@@ -183,13 +176,8 @@ const WatchHistoryList = forwardRef<WatchHistoryListRef>((props, ref) => {
     setIsDeleting(prev => ({ ...prev, [id]: true }));
     
     try {
-      if (user) {
-        // Delete from database for authenticated users
-        await deleteWatchHistoryItem(id);
-      } else {
-        // Delete from localStorage for non-authenticated users
-        deleteLocalWatchHistoryItem(id);
-      }
+      // Use dataAccessService to delete watch history item regardless of auth state
+      await dataAccessService.deleteWatchHistory(id);
       toast.success('Removed from watch history');
     } catch (error) {
       console.error('Error deleting watch history item:', error);
@@ -222,13 +210,8 @@ const WatchHistoryList = forwardRef<WatchHistoryListRef>((props, ref) => {
     setIsUpdating(true);
     
     try {
-      if (user) {
-        // Update in database for authenticated users
-        await updateWatchHistoryRating({ id, rating: editRating });
-      } else {
-        // Update in localStorage for non-authenticated users
-        updateLocalWatchHistoryRating(id, editRating);
-      }
+      // Use dataAccessService to update rating regardless of auth state
+      await dataAccessService.updateWatchHistoryRating(id, editRating);
       toast.success('Rating updated successfully');
       setEditItemId(null);
     } catch (error) {
@@ -252,133 +235,140 @@ const WatchHistoryList = forwardRef<WatchHistoryListRef>((props, ref) => {
 
   if (error) {
     return (
-      <div className="bg-red-50 p-4 rounded-md">
-        <p className="text-red-600">Error loading watch history: {error}</p>
+      <div className="p-4 bg-red-50 rounded-lg mt-4">
+        <p className="text-red-700">Error loading watch history: {error}</p>
+        <button 
+          onClick={() => fetchWatchHistory()}
+          className="mt-2 px-3 py-1 bg-red-100 text-red-800 rounded-md hover:bg-red-200"
+        >
+          Retry
+        </button>
       </div>
     );
   }
 
   if (watchHistory.length === 0) {
     return (
-      <div className="bg-gray-50 rounded-lg p-8 text-center">
-        <h3 className="font-medium text-gray-700">No anime in your watch history yet</h3>
-        <p className="mt-2 text-sm text-gray-600">
-          Add anime to your watch history using the form above.
-        </p>
+      <div className="py-12 border border-gray-200 rounded-lg bg-gray-50 text-center">
+        <p className="text-gray-500">Your watch history is empty.</p>
+        <p className="text-gray-500 mt-1">Use the form above to add anime you&apos;ve watched.</p>
       </div>
     );
   }
 
   return (
-    <div className="mt-8">
-      <h2 className="text-xl font-semibold mb-4 text-gray-900">Your Watch History</h2>
-      
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {watchHistory.map((item) => (
-          <div 
-            key={item.id} 
-            className="bg-white p-4 rounded-lg shadow-sm border border-gray-200"
-          >
-            <div className="flex">
+    <div className="grid grid-cols-1 gap-4">
+      {watchHistory.map((item) => (
+        <div key={item.id} className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden p-4">
+          <div className="flex items-start gap-4">
+            {/* Cover image */}
+            <div className="flex-shrink-0">
               {item.cover_image ? (
-                <div className="flex-shrink-0 h-20 w-14 mr-4 relative">
-                  <Image
-                    src={item.cover_image}
-                    alt={item.title}
-                    className="rounded-sm object-cover"
-                    fill
-                    sizes="56px"
-                    onError={(e) => {
-                      // Replace broken image with placeholder
-                      const target = e.target as HTMLImageElement;
-                      target.style.display = 'none';
-                    }}
-                  />
-                </div>
+                <Image
+                  src={item.cover_image}
+                  alt={item.title}
+                  width={80}
+                  height={120}
+                  className="rounded-md object-cover"
+                />
               ) : (
-                <div className="flex-shrink-0 h-20 w-14 mr-4 bg-gray-200 rounded-sm flex items-center justify-center">
-                  <span className="text-xs text-gray-700">No image</span>
+                <div className="bg-gray-200 w-20 h-30 rounded-md flex items-center justify-center">
+                  <span className="text-gray-500 text-xs">No Image</span>
                 </div>
               )}
+            </div>
+            
+            {/* Content */}
+            <div className="flex-1 min-w-0">
+              <h3 className="text-lg font-semibold text-gray-900 truncate">{item.title}</h3>
               
-              <div className="flex-1">
-                <h3 className="font-medium text-gray-900 line-clamp-2">{item.title}</h3>
-                
-                <div className="mt-2 flex items-center">
-                  {editItemId === item.id ? (
-                    <div className="flex items-center space-x-1">
-                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((star) => (
+              <div className="mt-2">
+                {editItemId === item.id ? (
+                  <div className="flex items-center">
+                    <div className="flex space-x-1">
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
                         <button
-                          key={star}
+                          key={num}
                           type="button"
-                          onClick={() => setEditRating(star)}
-                          className={`text-sm ${star <= editRating ? 'text-yellow-500' : 'text-gray-400'} hover:text-yellow-400 transition-colors`}
-                          aria-label={`Rate ${star} out of 10`}
+                          onClick={() => setEditRating(num)}
+                          className={`text-lg ${num <= editRating ? 'text-yellow-500' : 'text-gray-300'} hover:text-yellow-400`}
+                          aria-label={`Rate ${num} out of 10`}
                         >
-                          {star}
+                          {num}
                         </button>
                       ))}
                     </div>
-                  ) : (
-                    <div className="flex items-center">
-                      <span className="text-yellow-500 mr-1">★</span>
-                      <span className="text-sm font-semibold text-gray-800">{item.rating}/10</span>
+                    <div className="ml-4 space-x-2">
+                      <button
+                        onClick={() => saveRating(item.id)}
+                        disabled={isUpdating}
+                        className="px-2 py-1 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50"
+                      >
+                        {isUpdating ? 'Saving...' : 'Save'}
+                      </button>
+                      <button
+                        onClick={cancelEdit}
+                        className="px-2 py-1 text-sm bg-gray-200 text-gray-800 rounded hover:bg-gray-300"
+                      >
+                        Cancel
+                      </button>
                     </div>
-                  )}
-                  
-                  {!editItemId && (
-                    <div className="ml-4 text-xs text-gray-700">
-                      {new Date(item.created_at).toLocaleDateString()}
+                  </div>
+                ) : (
+                  <div className="flex items-center">
+                    <div className="flex space-x-1">
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
+                        <span
+                          key={num}
+                          className={`text-lg ${num <= item.rating ? 'text-yellow-500' : 'text-gray-300'}`}
+                        >
+                          {num}
+                        </span>
+                      ))}
                     </div>
-                  )}
-                </div>
+                    <div className="ml-4 text-sm text-gray-700">
+                      Rating: {item.rating}/10
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-            
-            <div className="mt-4 flex justify-end space-x-2">
-              {editItemId === item.id ? (
-                <>
-                  <button
-                    onClick={cancelEdit}
-                    className="px-2 py-1 text-xs text-gray-700 hover:text-gray-900"
-                    disabled={isUpdating}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => saveRating(item.id)}
-                    className="px-2 py-1 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50"
-                    disabled={isUpdating}
-                  >
-                    {isUpdating ? 'Saving...' : 'Save'}
-                  </button>
-                </>
-              ) : (
-                <>
+              
+              <div className="mt-3 flex space-x-2">
+                {!editItemId && (
                   <button
                     onClick={() => handleEdit(item)}
-                    className="px-2 py-1 text-xs text-indigo-600 hover:text-indigo-800"
+                    className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
                   >
                     Edit Rating
                   </button>
-                  <button
-                    onClick={() => handleDelete(item.id)}
-                    className="px-2 py-1 text-xs text-red-600 hover:text-red-800 disabled:opacity-50"
-                    disabled={isDeleting[item.id]}
-                  >
-                    {isDeleting[item.id] ? 'Deleting...' : 'Delete'}
-                  </button>
-                </>
-              )}
+                )}
+                
+                <button
+                  onClick={() => handleDelete(item.id)}
+                  disabled={!!isDeleting[item.id]}
+                  className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50"
+                >
+                  {isDeleting[item.id] ? 'Removing...' : 'Remove'}
+                </button>
+              </div>
             </div>
           </div>
-        ))}
-      </div>
+        </div>
+      ))}
     </div>
   );
-})
+});
 
-// Display name for debugging purposes
+// Main component wrapper with AuthAwareWrapper
+const WatchHistoryList = forwardRef<WatchHistoryListRef>((props, ref) => {
+  return (
+    <AuthAwareWrapper>
+      <WatchHistoryListInner ref={ref} />
+    </AuthAwareWrapper>
+  );
+});
+
 WatchHistoryList.displayName = 'WatchHistoryList';
+WatchHistoryListInner.displayName = 'WatchHistoryListInner';
 
 export default WatchHistoryList; 

@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, ReactNode, useCallback } fr
 import { AnimeData } from '@/services/recommendationService';
 import { AnimeWatchHistoryItem } from '@/types/watchHistory';
 import { useRecommendations as useRecommendationsHook } from '@/hooks/useRecommendations';
+import { AuthAwareWrapper } from '@/components/AuthAwareWrapper';
 
 interface RecommendationsContextType {
   recommendations: AnimeData[];
@@ -16,8 +17,8 @@ interface RecommendationsContextType {
   isWatchHistoryLoaded: boolean;
   loadAttempts: number;
   modelLoadingProgress: number;
-  generateRecommendations: (customLimit?: number, forceRegenerate?: boolean) => Promise<void>;
-  refreshRecommendations: (customLimit?: number, forceRegenerate?: boolean) => Promise<void>;
+  generateRecommendations: (customLimit?: number) => Promise<void>;
+  refreshRecommendations: (customLimit?: number) => Promise<void>;
   feedback: Record<number, 'like' | 'dislike' | null>;
   addFeedback: (animeId: number, feedbackType: 'like' | 'dislike' | null) => void;
   isCollaborativeFilteringEnabled: boolean;
@@ -51,7 +52,11 @@ export function useRecommendations() {
   return useContext(RecommendationsContext);
 }
 
-export function RecommendationsProvider({ children }: { children: ReactNode }) {
+/**
+ * Inner component that contains the actual recommendations state
+ * This will be remounted when auth state changes
+ */
+function RecommendationsState({ children }: { children: ReactNode }) {
   const [feedback, setFeedback] = useState<Record<number, 'like' | 'dislike' | null>>({});
   
   // Use the hook with 9 recommendations as default
@@ -81,5 +86,19 @@ export function RecommendationsProvider({ children }: { children: ReactNode }) {
     <RecommendationsContext.Provider value={value}>
       {children}
     </RecommendationsContext.Provider>
+  );
+}
+
+/**
+ * Main RecommendationsProvider wrapped with the AuthAwareWrapper
+ * This ensures the recommendations state is reset when auth state changes
+ */
+export function RecommendationsProvider({ children }: { children: ReactNode }) {
+  return (
+    <AuthAwareWrapper>
+      <RecommendationsState>
+        {children}
+      </RecommendationsState>
+    </AuthAwareWrapper>
   );
 } 

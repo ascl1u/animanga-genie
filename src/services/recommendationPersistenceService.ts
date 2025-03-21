@@ -33,8 +33,8 @@ export const saveRecommendations = async (
       return null;
     }
     
-    console.log(`Saving recommendations for user ${user.id}`);
-    console.log(`Found ${recommendations.length} recommendations to save`);
+    console.log(`[DB] Saving recommendations for user ${user.id}`);
+    console.log(`[DB] Found ${recommendations.length} recommendations to save`);
     
     // Keep only necessary data to reduce storage size
     const simplifiedRecommendations = recommendations.map(rec => ({
@@ -47,6 +47,10 @@ export const saveRecommendations = async (
       description: rec.description
     }));
     
+    // Check localStorage to ensure we're not accidentally saving here too
+    const localStorageCheck = localStorage.getItem('animanga-genie-recommendations');
+    console.log(`[DB] Before DB save, localStorage has recommendations: ${!!localStorageCheck}`);
+    
     const { data, error } = await supabase
       .from('anime_recommendations')
       .upsert({
@@ -58,14 +62,23 @@ export const saveRecommendations = async (
       .single();
     
     if (error) {
-      console.error('Error saving recommendations:', error);
+      console.error('[DB] Error saving recommendations:', error);
       return null;
     }
     
-    console.log('Successfully saved recommendations');
+    console.log('[DB] Successfully saved recommendations to database');
+    
+    // Verify localStorage still doesn't have recommendations after DB save
+    const afterSaveCheck = localStorage.getItem('animanga-genie-recommendations');
+    console.log(`[DB] After DB save, localStorage has recommendations: ${!!afterSaveCheck}`);
+    
+    if (!!afterSaveCheck) {
+      console.log('[DB] WARNING: Found recommendations in localStorage after DB save!');
+    }
+    
     return data;
   } catch (error) {
-    console.error('Error in saveRecommendations:', error);
+    console.error('[DB] Error in saveRecommendations:', error);
     return null;
   }
 };
@@ -82,11 +95,12 @@ export const loadRecommendations = async (
     const { data: { user } } = await supabase.auth.getUser();
     
     if (!user) {
-      console.error('Cannot load recommendations: User not authenticated');
+      console.error('[DB] Cannot load recommendations: User not authenticated');
       return null;
     }
     
-    console.log(`Loading recommendations for user ${user.id}`);
+    console.log(`[DB] Loading recommendations for user ${user.id}`);
+    console.log(`[DB] Looking for watch history hash: ${watchHistoryHash}`);
     
     const { data, error } = await supabase
       .from('anime_recommendations')
@@ -97,9 +111,9 @@ export const loadRecommendations = async (
     if (error) {
       if (error.code === 'PGRST116') {
         // No data found - this is not an error, just no recommendations yet
-        console.log('No saved recommendations found');
+        console.log('[DB] No saved recommendations found in database');
       } else {
-        console.error('Error loading recommendations:', error);
+        console.error('[DB] Error loading recommendations:', error);
       }
       return null;
     }
@@ -108,14 +122,20 @@ export const loadRecommendations = async (
     
     // Check if the recommendations are still valid based on watch history hash
     if (storedData.watch_history_hash !== watchHistoryHash) {
-      console.log('Watch history has changed - recommendations need to be regenerated');
+      console.log(`[DB] Watch history has changed - recommendations need to be regenerated`);
+      console.log(`[DB] Stored hash: ${storedData.watch_history_hash}, Current hash: ${watchHistoryHash}`);
       return null;
     }
     
-    console.log(`Loaded ${storedData.recommendations.length} recommendations`);
+    console.log(`[DB] Loaded ${storedData.recommendations.length} recommendations from database`);
+    
+    // Check localStorage to ensure we're not accidentally saving here too
+    const localStorageCheck = localStorage.getItem('animanga-genie-recommendations');
+    console.log(`[DB] After DB load, localStorage has recommendations: ${!!localStorageCheck}`);
+    
     return storedData.recommendations;
   } catch (error) {
-    console.error('Error in loadRecommendations:', error);
+    console.error('[DB] Error in loadRecommendations:', error);
     return null;
   }
 };

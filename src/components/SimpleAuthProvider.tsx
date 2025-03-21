@@ -3,7 +3,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { User, Session } from '@supabase/supabase-js';
-import { syncLocalDataWithDatabase } from '@/services/authDataSyncService';
 import { toast } from 'react-hot-toast';
 
 type AuthState = {
@@ -39,7 +38,15 @@ export function useAuth() {
 }
 
 // Component to only be rendered on the client side
-export function SimpleAuthProvider({ children }: { children: React.ReactNode }) {
+export interface SimpleAuthProviderProps {
+  children: React.ReactNode;
+  onAuthStateChange?: (isAuthenticated: boolean, event?: string) => void;
+}
+
+export function SimpleAuthProvider({ 
+  children, 
+  onAuthStateChange 
+}: SimpleAuthProviderProps) {
   // Auth state
   const [state, setState] = useState<AuthState>({
     user: null,
@@ -95,6 +102,11 @@ export function SimpleAuthProvider({ children }: { children: React.ReactNode }) 
           isLoading: false,
           isAuthenticated: true,
         });
+
+        // Call the callback if provided
+        if (onAuthStateChange) {
+          onAuthStateChange(true);
+        }
       } else {
         // No session
         setState({
@@ -103,6 +115,11 @@ export function SimpleAuthProvider({ children }: { children: React.ReactNode }) 
           isLoading: false,
           isAuthenticated: false,
         });
+        
+        // Call the callback if provided
+        if (onAuthStateChange) {
+          onAuthStateChange(false);
+        }
       }
     } catch (error) {
       console.error('Auth refresh error:', error);
@@ -113,7 +130,7 @@ export function SimpleAuthProvider({ children }: { children: React.ReactNode }) 
         isAuthenticated: false,
       });
     }
-  }, [isMounted, supabase.auth]);
+  }, [isMounted, supabase.auth, onAuthStateChange]);
 
   // Sign in
   const signIn = async (email: string, password: string) => {
@@ -124,21 +141,7 @@ export function SimpleAuthProvider({ children }: { children: React.ReactNode }) 
       });
       
       if (!error) {
-        // Attempt to sync local data to database after successful login
-        try {
-          const syncResult = await syncLocalDataWithDatabase();
-          if (syncResult.migrated > 0) {
-            // Notify user that their data has been migrated
-            toast.success(`${syncResult.migrated} items from your watch history have been saved to your account!`);
-          }
-          if (syncResult.duplicates > 0) {
-            // Just log this, no need to notify the user
-            console.log(`${syncResult.duplicates} items were already in your account`);
-          }
-        } catch (syncError) {
-          console.error('Error syncing local data to database:', syncError);
-          // Don't return an error here, the login was still successful
-        }
+        toast.success('Logged in successfully!');
       }
       
       return { error };
@@ -157,17 +160,7 @@ export function SimpleAuthProvider({ children }: { children: React.ReactNode }) 
       });
       
       if (!error) {
-        // Attempt to sync local data to database after successful signup
-        try {
-          const syncResult = await syncLocalDataWithDatabase();
-          if (syncResult.migrated > 0) {
-            // Notify user that their data has been migrated
-            toast.success(`${syncResult.migrated} items from your watch history have been saved to your account!`);
-          }
-        } catch (syncError) {
-          console.error('Error syncing local data to database:', syncError);
-          // Don't return an error here, the signup was still successful
-        }
+        toast.success('Account created! Please check your email to confirm your account.');
       }
       
       return { error };
@@ -225,43 +218,39 @@ export function SimpleAuthProvider({ children }: { children: React.ReactNode }) 
             isAuthenticated: true
           }));
           
-          // If this is a new sign in (not just a token refresh), sync local data
-          if (event === 'SIGNED_IN') {
-            try {
-              const syncResult = await syncLocalDataWithDatabase();
-              if (syncResult.migrated > 0) {
-                // Notify user that their data has been migrated
-                toast.success(`${syncResult.migrated} items from your watch history have been saved to your account!`);
-              }
-            } catch (syncError) {
-              console.error('Error syncing local data to database:', syncError);
-            }
+          // Call the callback if provided with the auth event for more granular control
+          if (onAuthStateChange) {
+            onAuthStateChange(true, event);
           }
+
+          console.log(`[AUTH] Auth state changed to ${event} for user: ${data.user?.id || 'unknown'}`);
+        } else {
+          // Call the callback if provided - user is not authenticated
+          if (onAuthStateChange) {
+            onAuthStateChange(false, event);
+          }
+          
+          console.log(`[AUTH] Auth state changed to ${event}, no session.`);
         }
       }
     );
     
+    // Clean up subscription
     return () => {
       subscription.unsubscribe();
     };
-  }, [refreshAuth, supabase.auth]);
-
-  // For hydration safety, return children directly during SSR or initial render
-  if (!isMounted) {
-    return <>{children}</>;
-  }
-
-  // Context value
-  const value = {
-    ...state,
-    signIn,
-    signUp,
-    signOut,
-    refreshAuth,
-  };
+  }, [refreshAuth, supabase.auth, onAuthStateChange]);
 
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider
+      value={{
+        ...state,
+        signIn,
+        signUp,
+        signOut,
+        refreshAuth,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

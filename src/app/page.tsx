@@ -27,7 +27,7 @@ export default function HomePage() {
           </p>
           <div className="mt-10 flex justify-center">
             <Link
-              href="/search"
+              href="/my-anime"
               className="px-12 py-5 text-lg font-medium rounded-lg text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 transform hover:scale-105 transition-all shadow-lg"
             >
               Start Your Journey Now

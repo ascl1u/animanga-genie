@@ -7,6 +7,7 @@ import { toast } from 'react-hot-toast';
 import { type AnimeSearchResult } from '@/utils/anilistClient';
 import { WatchHistoryFormData, AnimeWatchHistoryItem } from '@/types/watchHistory';
 import { addToWatchHistory } from '@/services/watchHistoryService';
+import { addToLocalWatchHistory } from '@/services/localStorageService';
 
 interface WatchHistoryFormProps {
   onAnimeAdded?: (anime: AnimeWatchHistoryItem) => void;
@@ -32,11 +33,6 @@ export default function WatchHistoryForm({ onAnimeAdded }: WatchHistoryFormProps
       return;
     }
     
-    if (!user) {
-      toast.error('You must be logged in to add to your watch history');
-      return;
-    }
-    
     setIsSubmitting(true);
     setErrorDetails(null);
     
@@ -56,8 +52,16 @@ export default function WatchHistoryForm({ onAnimeAdded }: WatchHistoryFormProps
         rating: rating
       };
       
-      // Call our service to add the anime to watch history
-      const addedAnime = await addToWatchHistory(formData);
+      let addedAnime;
+      
+      // If user is authenticated, use database storage, otherwise use local storage
+      if (user) {
+        // Call our service to add the anime to watch history in the database
+        addedAnime = await addToWatchHistory(formData);
+      } else {
+        // For non-authenticated users, store in localStorage
+        addedAnime = addToLocalWatchHistory(formData);
+      }
       
       toast.success('Added to watch history!');
       

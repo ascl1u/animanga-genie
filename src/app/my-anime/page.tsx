@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/SimpleAuthProvider';
 import WatchHistoryForm from '@/components/WatchHistoryForm';
 import WatchHistoryList from '@/components/WatchHistoryList';
@@ -10,9 +9,8 @@ import Link from 'next/link';
 import { AnimeWatchHistoryItem } from '@/types/watchHistory';
 
 export default function MyAnimePage() {
-  const { user, isLoading, isAuthenticated } = useAuth();
+  const { isLoading, isAuthenticated } = useAuth();
   const [mounted, setMounted] = useState(false);
-  const router = useRouter();
   const watchHistoryListRef = useRef<{ addAnime?: (anime: AnimeWatchHistoryItem) => void }>({}); 
   
   // Client-side only code
@@ -20,13 +18,6 @@ export default function MyAnimePage() {
     setMounted(true);
   }, []);
   
-  // Redirect to login if not authenticated after loading
-  useEffect(() => {
-    if (mounted && !isLoading && !isAuthenticated) {
-      router.push('/login');
-    }
-  }, [mounted, isLoading, isAuthenticated, router]);
-
   // Handler for when anime is added via the form
   const handleAnimeAdded = (anime: AnimeWatchHistoryItem) => {
     // If the WatchHistoryList component has exposed an addAnime method, call it
@@ -47,39 +38,47 @@ export default function MyAnimePage() {
     );
   }
   
-  // Show my anime page if authenticated
-  if (isAuthenticated && user) {
-    return (
-      <div className="min-h-screen bg-gray-50 py-12">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">My Anime</h1>
-              <p className="mt-1 text-sm text-gray-700">
-                Track your anime watch history and ratings
+  // Show my anime page (for both authenticated and non-authenticated users)
+  return (
+    <div className="min-h-screen bg-gray-50 py-12">
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">My Anime</h1>
+            <p className="mt-1 text-sm text-gray-700">
+              Track your anime watch history and ratings
+            </p>
+            {!isAuthenticated && (
+              <p className="mt-2 text-sm text-orange-600">
+                You are using AniManga Genie without an account. Your data will be saved in your browser, but will be lost if you clear your browser data.
+                <Link href="/signup" className="ml-2 font-medium underline text-indigo-600">
+                  Sign up
+                </Link>
+                <span className="mx-1">or</span>
+                <Link href="/login" className="font-medium underline text-indigo-600">
+                  Log in
+                </Link>
+                <span className="ml-1">to save your data permanently.</span>
               </p>
-            </div>
-            <Link
-              href="/profile"
-              className="px-4 py-2 text-sm font-medium text-indigo-600 bg-white border border-indigo-600 rounded-md hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-            >
-              Back to Profile
-            </Link>
+            )}
           </div>
-          
-          {/* Import Options */}
-          <WatchHistoryImport />
-          
-          {/* Watch History Form */}
-          <WatchHistoryForm onAnimeAdded={handleAnimeAdded} />
-          
-          {/* Watch History List */}
-          <WatchHistoryList ref={watchHistoryListRef} />
+          <Link
+            href="/"
+            className="px-4 py-2 text-sm font-medium text-indigo-600 bg-white border border-indigo-600 rounded-md hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+          >
+            Home
+          </Link>
         </div>
+        
+        {/* Import Options - Only show for authenticated users */}
+        {isAuthenticated && <WatchHistoryImport />}
+        
+        {/* Watch History Form */}
+        <WatchHistoryForm onAnimeAdded={handleAnimeAdded} />
+        
+        {/* Watch History List */}
+        <WatchHistoryList ref={watchHistoryListRef} />
       </div>
-    );
-  }
-  
-  // Fallback - should not reach here due to redirect
-  return null;
+    </div>
+  );
 } 

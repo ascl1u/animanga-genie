@@ -7,6 +7,8 @@ import { createClient } from '@/utils/supabase/client';
 import { getUserWatchHistory, WATCH_HISTORY_CHANGED_EVENT } from '@/services/watchHistoryService';
 import { collaborativeFilteringService } from '@/services/collaborativeFilteringService';
 import { saveRecommendations, loadRecommendations } from '@/services/recommendationPersistenceService';
+import { getLocalWatchHistory, saveLocalRecommendations, getLocalRecommendations } from '@/services/localStorageService';
+import { useAuth } from '@/components/SimpleAuthProvider';
 
 interface UseRecommendationsOptions {
   userId?: string;
@@ -38,6 +40,7 @@ export function useRecommendations({
 }: UseRecommendationsOptions = {}) {
   const { isModelLoaded, isModelLoading, loadModel, loadingProgress } = useModelContext();
   const supabase = createClient();
+  const { user, isAuthenticated } = useAuth();
   
   const [status, setStatus] = useState<{
     isLoading: boolean;
@@ -77,14 +80,27 @@ export function useRecommendations({
     }
   }, [supabase.auth, userId]);
 
-  // Fetch watch history separately
+  // Fetch watch history from appropriate source
   const fetchWatchHistory = useCallback(async () => {
     try {
-      debugLog('Fetching watch history...');
-      const history = await getUserWatchHistory();
-      debugLog(`Fetched watch history: ${history.length} items`);
+      debugLog('Fetching watch history');
+      let history: AnimeWatchHistoryItem[] = [];
       
-      // Create a hash of the new watch history
+      if (isAuthenticated && user) {
+        // For authenticated users, get watch history from the database
+        history = await getUserWatchHistory();
+        debugLog(`Fetched ${history.length} items from database`);
+      } else {
+        // For non-authenticated users, get watch history from localStorage
+        history = getLocalWatchHistory();
+        debugLog(`Fetched ${history.length} items from localStorage`);
+      }
+      
+      // Update state with the fetched history
+      setWatchHistory(history);
+      setWatchHistoryLoaded(true);
+      
+      // Create a hash to detect changes
       const newHash = createWatchHistoryHash(history);
       
       // Check if watch history has changed from the current one
@@ -94,15 +110,13 @@ export function useRecommendations({
         setWatchHistoryHash(newHash);
       }
       
-      setWatchHistory(history);
-      setWatchHistoryLoaded(true);
       return history;
     } catch (error) {
-      debugLog(`Error fetching watch history: ${error instanceof Error ? error.message : String(error)}`);
+      console.error('Error fetching watch history:', error);
       setWatchHistoryLoaded(true);
       return [];
     }
-  }, [watchHistoryHash]);
+  }, [isAuthenticated, user, watchHistoryHash]);
 
   // Memoized function to fetch recommendations
   const fetchRecommendations = useCallback(async (customLimit?: number) => {
@@ -193,22 +207,15 @@ export function useRecommendations({
         debugLog(`Recommendations generated successfully: ${result.recommendations.length} items`);
         setRecommendations(result.recommendations);
         
-        // Save watch history if available
-        if (result.userWatchHistory) {
-          debugLog(`Received watch history with ${result.userWatchHistory.length} items`);
-          const newHistory = result.userWatchHistory;
-          setWatchHistory(newHistory);
-          setWatchHistoryLoaded(true);
-          
-          // Update the watch history hash and mark as unchanged
-          const newHash = createWatchHistoryHash(newHistory);
-          setWatchHistoryHash(newHash);
-          setWatchHistoryChanged(false);
-          
-          // Save recommendations to Supabase
-          if (result.recommendations.length > 0) {
-            debugLog('Saving recommendations to database');
-            saveRecommendations(result.recommendations, newHash);
+        // Save recommendations to appropriate storage
+        if (result.recommendations.length > 0) {
+          debugLog('Saving recommendations');
+          if (isAuthenticated && user) {
+            // Save to database for authenticated users
+            saveRecommendations(result.recommendations, watchHistoryHash);
+          } else {
+            // Save to localStorage for non-authenticated users
+            saveLocalRecommendations(result.recommendations);
           }
         }
         
@@ -252,7 +259,7 @@ export function useRecommendations({
         isInitialized: true,
       }));
     }
-  }, [getUserId, isModelLoaded, limit, loadModel, preferredGenres, preferredTags, status.isInitialized, watchHistory, watchHistoryChanged]);
+  }, [getUserId, isModelLoaded, limit, loadModel, preferredGenres, preferredTags, status.isInitialized, watchHistory, watchHistoryChanged, isAuthenticated, user]);
 
   // Effect to auto-load if specified
   useEffect(() => {
@@ -289,7 +296,16 @@ export function useRecommendations({
     const loadSavedRecommendations = async () => {
       if (watchHistoryLoaded && watchHistoryHash && !status.isInitialized && !status.isLoading) {
         debugLog('Attempting to load saved recommendations');
-        const savedRecommendations = await loadRecommendations(watchHistoryHash);
+        
+        let savedRecommendations: AnimeData[] | null = null;
+        
+        if (isAuthenticated && user) {
+          // Load from database for authenticated users
+          savedRecommendations = await loadRecommendations(watchHistoryHash);
+        } else {
+          // Load from localStorage for non-authenticated users
+          savedRecommendations = getLocalRecommendations();
+        }
         
         if (savedRecommendations && savedRecommendations.length > 0) {
           debugLog(`Loaded ${savedRecommendations.length} saved recommendations`);
@@ -313,7 +329,7 @@ export function useRecommendations({
     if (watchHistoryLoaded && !status.isInitialized && !status.isLoading) {
       loadSavedRecommendations();
     }
-  }, [autoLoad, fetchRecommendations, status.isInitialized, status.isLoading, watchHistoryHash, watchHistoryLoaded]);
+  }, [autoLoad, fetchRecommendations, status.isInitialized, status.isLoading, watchHistoryHash, watchHistoryLoaded, isAuthenticated, user]);
 
   return {
     recommendations,

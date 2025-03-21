@@ -7,6 +7,7 @@ import {
 } from './modelService';
 import { logOnnxServiceState } from './onnxModelService';
 import { getUserWatchHistory } from './watchHistoryService';
+import { getLocalWatchHistory } from './localStorageService';
 import { AnimeWatchHistoryItem } from '@/types/watchHistory';
 import { getAnimeDetails } from '@/utils/anilistClient';
 import { collaborativeFilteringService, CollaborativeRecommendation } from './collaborativeFilteringService';
@@ -524,11 +525,7 @@ async function fetchAnimeFromSupabase(limit: number = 5000): Promise<{
 }
 
 /**
- * Generate recommendations for a user based on their watch history
- * @param userId The ID of the user to generate recommendations for
- * @param preferredGenres List of preferred genres (fallback)
- * @param preferredTags List of preferred tags (fallback)
- * @param limit Maximum number of recommendations to return
+ * Get recommendations for a user based on their watch history, preferred genres, and tags
  */
 export async function getRecommendations(
   userId: string,
@@ -567,9 +564,24 @@ export async function getRecommendations(
       await loadModel();
     }
 
-    // Get the user's watch history
+    // Get the user's watch history based on authentication status
     console.log(`[RECOMMENDATION] Getting watch history for user ${userId}...`);
-    const userWatchHistory = await getUserWatchHistory();
+    
+    // Check if user is authenticated
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    // Get watch history from appropriate source
+    let userWatchHistory;
+    if (user) {
+      // Authenticated user - get from database
+      console.log('[RECOMMENDATION] User is authenticated, getting watch history from database');
+      userWatchHistory = await getUserWatchHistory();
+    } else {
+      // Non-authenticated user - get from localStorage
+      console.log('[RECOMMENDATION] User is not authenticated, getting watch history from localStorage');
+      userWatchHistory = getLocalWatchHistory();
+    }
     
     if (!userWatchHistory || userWatchHistory.length === 0) {
       console.log('[RECOMMENDATION] No watch history found, falling back to preferred genres');

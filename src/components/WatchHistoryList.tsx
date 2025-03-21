@@ -7,6 +7,7 @@ import { toast } from 'react-hot-toast';
 import { createClient } from '@/utils/supabase/client';
 import { AnimeWatchHistoryItem } from '@/types/watchHistory';
 import { getUserWatchHistory, updateWatchHistoryRating, deleteWatchHistoryItem } from '@/services/watchHistoryService';
+import { getLocalWatchHistory, updateLocalWatchHistoryRating, deleteLocalWatchHistoryItem } from '@/services/localStorageService';
 
 export interface WatchHistoryListRef {
   addAnime?: (anime: AnimeWatchHistoryItem) => void;
@@ -34,13 +35,20 @@ const WatchHistoryList = forwardRef<WatchHistoryListRef>((props, ref) => {
   }));
 
   const fetchWatchHistory = useCallback(async () => {
-    if (!user) return;
-    
     setIsLoading(true);
     setError(null);
     
     try {
-      const data = await getUserWatchHistory();
+      let data: AnimeWatchHistoryItem[];
+      
+      if (user) {
+        // Get data from database for authenticated users
+        data = await getUserWatchHistory();
+      } else {
+        // Get data from localStorage for non-authenticated users
+        data = getLocalWatchHistory();
+      }
+      
       setWatchHistory(data);
     } catch (err) {
       console.error('Error fetching watch history:', err);
@@ -54,83 +62,100 @@ const WatchHistoryList = forwardRef<WatchHistoryListRef>((props, ref) => {
 
   // Improved real-time subscription setup
   useEffect(() => {
-    if (!user) return;
-    
-    // Only set up subscription if we have a user
-    const setupRealtimeSubscription = () => {
-      // Clean up any existing subscription
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-      }
+    // For authenticated users, set up real-time updates
+    if (user) {
+      // Only set up subscription if we have a user
+      const setupRealtimeSubscription = () => {
+        // Clean up any existing subscription
+        if (channelRef.current) {
+          supabase.removeChannel(channelRef.current);
+        }
+        
+        // Set up a new subscription
+        channelRef.current = supabase
+          .channel('anime_watch_history_changes')
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'anime_watch_history',
+              filter: `user_id=eq.${user.id}`,
+            },
+            (payload) => {
+              console.log('Real-time update received:', payload);
+              
+              // Handle different types of changes
+              if (payload.eventType === 'INSERT') {
+                // Add new item to the list
+                const newItem = payload.new as AnimeWatchHistoryItem;
+                setWatchHistory(prev => {
+                  // Check if the item is already in the list (to avoid duplicates)
+                  if (prev.some(item => item.id === newItem.id)) {
+                    return prev;
+                  }
+                  return [newItem, ...prev];
+                });
+                toast.success('New anime added to your watch history');
+              } 
+              else if (payload.eventType === 'DELETE') {
+                // Remove deleted item from the list
+                const deletedItem = payload.old as AnimeWatchHistoryItem;
+                setWatchHistory(prev => 
+                  prev.filter(item => item.id !== deletedItem.id)
+                );
+              }
+              else if (payload.eventType === 'UPDATE') {
+                // Update the modified item in the list
+                const updatedItem = payload.new as AnimeWatchHistoryItem;
+                setWatchHistory(prev => 
+                  prev.map(item => 
+                    item.id === updatedItem.id ? updatedItem : item
+                  )
+                );
+              }
+            }
+          )
+          .subscribe((status) => {
+            console.log('Subscription status:', status);
+            if (status !== 'SUBSCRIBED') {
+              // If subscription fails, fall back to polling
+              fetchWatchHistory();
+            }
+          });
+      };
+
+      // Set up real-time subscription
+      setupRealtimeSubscription();
+
+      // Clean up subscription when component unmounts or user changes
+      return () => {
+        if (channelRef.current) {
+          supabase.removeChannel(channelRef.current);
+          channelRef.current = null;
+        }
+      };
+    } else {
+      // For non-authenticated users, set up a localStorage event listener
+      const handleStorageChange = (e: StorageEvent) => {
+        if (e.key === 'animanga-genie-watch-history') {
+          fetchWatchHistory();
+        }
+      };
       
-      // Set up a new subscription
-      channelRef.current = supabase
-        .channel('anime_watch_history_changes')
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'anime_watch_history',
-            filter: `user_id=eq.${user.id}`,
-          },
-          (payload) => {
-            console.log('Real-time update received:', payload);
-            
-            // Handle different types of changes
-            if (payload.eventType === 'INSERT') {
-              // Add new item to the list
-              const newItem = payload.new as AnimeWatchHistoryItem;
-              setWatchHistory(prev => {
-                // Check if the item is already in the list (to avoid duplicates)
-                if (prev.some(item => item.id === newItem.id)) {
-                  return prev;
-                }
-                return [newItem, ...prev];
-              });
-              toast.success('New anime added to your watch history');
-            } 
-            else if (payload.eventType === 'DELETE') {
-              // Remove deleted item from the list
-              const deletedItem = payload.old as AnimeWatchHistoryItem;
-              setWatchHistory(prev => 
-                prev.filter(item => item.id !== deletedItem.id)
-              );
-            }
-            else if (payload.eventType === 'UPDATE') {
-              // Update the modified item in the list
-              const updatedItem = payload.new as AnimeWatchHistoryItem;
-              setWatchHistory(prev => 
-                prev.map(item => 
-                  item.id === updatedItem.id ? updatedItem : item
-                )
-              );
-            }
-          }
-        )
-        .subscribe((status) => {
-          console.log('Subscription status:', status);
-          if (status !== 'SUBSCRIBED') {
-            // If subscription fails, fall back to polling
-            fetchWatchHistory();
-          }
-        });
-    };
-
-    // Initial data fetch
-    fetchWatchHistory();
-    
-    // Set up real-time subscription
-    setupRealtimeSubscription();
-
-    // Clean up subscription when component unmounts or user changes
-    return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
-    };
+      // Listen for storage events from other tabs
+      window.addEventListener('storage', handleStorageChange);
+      
+      return () => {
+        window.removeEventListener('storage', handleStorageChange);
+      };
+    }
   }, [user, supabase, fetchWatchHistory]);
+
+  // Initial data fetch
+  useEffect(() => {
+    fetchWatchHistory();
+  }, [fetchWatchHistory]);
 
   const handleEdit = (item: AnimeWatchHistoryItem) => {
     setEditItemId(item.id);
@@ -158,8 +183,13 @@ const WatchHistoryList = forwardRef<WatchHistoryListRef>((props, ref) => {
     setIsDeleting(prev => ({ ...prev, [id]: true }));
     
     try {
-      // Actually delete from database
-      await deleteWatchHistoryItem(id);
+      if (user) {
+        // Delete from database for authenticated users
+        await deleteWatchHistoryItem(id);
+      } else {
+        // Delete from localStorage for non-authenticated users
+        deleteLocalWatchHistoryItem(id);
+      }
       toast.success('Removed from watch history');
     } catch (error) {
       console.error('Error deleting watch history item:', error);
@@ -192,7 +222,13 @@ const WatchHistoryList = forwardRef<WatchHistoryListRef>((props, ref) => {
     setIsUpdating(true);
     
     try {
-      await updateWatchHistoryRating({ id, rating: editRating });
+      if (user) {
+        // Update in database for authenticated users
+        await updateWatchHistoryRating({ id, rating: editRating });
+      } else {
+        // Update in localStorage for non-authenticated users
+        updateLocalWatchHistoryRating(id, editRating);
+      }
       toast.success('Rating updated successfully');
       setEditItemId(null);
     } catch (error) {

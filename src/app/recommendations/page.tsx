@@ -3,10 +3,13 @@
 import RecommendationCard from '@/components/RecommendationCard';
 import { useRecommendations } from '@/context/RecommendationsContext';
 import { useModelContext } from '@/context/ModelContext';
+import { useAuth } from '@/components/SimpleAuthProvider';
+import Link from 'next/link';
 import type { MouseEvent } from 'react';
 import { useState } from 'react';
 
 export default function RecommendationsPage() {
+  const { isAuthenticated } = useAuth();
   const { isModelLoaded, isModelLoading } = useModelContext();
   const {
     recommendations,
@@ -60,6 +63,45 @@ export default function RecommendationsPage() {
     e.preventDefault();
     refreshRecommendations();
   };
+
+  // If no watch history, show message
+  if (!isLoading && isWatchHistoryLoaded && !hasWatchHistory) {
+    return (
+      <div className="min-h-screen bg-gray-50 py-12">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="bg-white p-8 rounded-lg shadow-md text-center">
+            <h1 className="text-3xl font-bold text-gray-900 mb-4">Recommendations</h1>
+            <div className="my-8">
+              <p className="text-lg text-gray-700 mb-4">
+                You haven&apos;t added any anime to your watch history yet. Add some anime to get personalized recommendations!
+              </p>
+              <Link 
+                href="/my-anime"
+                className="px-6 py-3 bg-indigo-600 text-white font-medium rounded-md shadow-sm hover:bg-indigo-700"
+              >
+                Add Anime to Watch History
+              </Link>
+            </div>
+            {!isAuthenticated && (
+              <div className="mt-8 p-4 bg-blue-50 rounded-lg">
+                <p className="text-sm text-blue-600">
+                  You are using AniManga Genie without an account. Your data will be saved in your browser, but will be lost if you clear your browser data.
+                  <Link href="/signup" className="ml-2 font-medium underline text-indigo-600">
+                    Sign up
+                  </Link>
+                  <span className="mx-1">or</span>
+                  <Link href="/login" className="font-medium underline text-indigo-600">
+                    Log in
+                  </Link>
+                  <span className="ml-1">to save your data permanently.</span>
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto py-8 px-4">
@@ -287,6 +329,23 @@ export default function RecommendationsPage() {
               Attempt {loadAttempts} - {isModelLoading ? 'Loading model...' : 'Running inference...'}
             </p>
           )}
+          
+          {/* Add notification for non-authenticated users */}
+          {!isAuthenticated && (
+            <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <p className="text-sm text-blue-600">
+                You are using AniManga Genie without an account. Your data will be saved in your browser, but will be lost if you clear your browser data.
+                <Link href="/signup" className="ml-2 font-medium underline text-indigo-600">
+                  Sign up
+                </Link>
+                <span className="mx-1">or</span>
+                <Link href="/login" className="font-medium underline text-indigo-600">
+                  Log in
+                </Link>
+                <span className="ml-1">to save your data permanently.</span>
+              </p>
+            </div>
+          )}
         </div>
       )}
       
@@ -309,6 +368,23 @@ export default function RecommendationsPage() {
           >
             Retry
           </button>
+          
+          {/* Add notification for non-authenticated users */}
+          {!isAuthenticated && (
+            <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <p className="text-sm text-blue-600">
+                You are using AniManga Genie without an account. Your data will be saved in your browser, but will be lost if you clear your browser data.
+                <Link href="/signup" className="ml-2 font-medium underline text-indigo-600">
+                  Sign up
+                </Link>
+                <span className="mx-1">or</span>
+                <Link href="/login" className="font-medium underline text-indigo-600">
+                  Log in
+                </Link>
+                <span className="ml-1">to save your data permanently.</span>
+              </p>
+            </div>
+          )}
         </div>
       )}
       
@@ -332,6 +408,24 @@ export default function RecommendationsPage() {
             <p className="text-gray-600">
               Based on {watchHistory.length} anime in your watch history
             </p>
+            
+            {/* Add notification for non-authenticated users */}
+            {!isAuthenticated && (
+              <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <p className="text-sm text-blue-600">
+                  You are using AniManga Genie without an account. Your data will be saved in your browser, but will be lost if you clear your browser data.
+                  <Link href="/signup" className="ml-2 font-medium underline text-indigo-600">
+                    Sign up
+                  </Link>
+                  <span className="mx-1">or</span>
+                  <Link href="/login" className="font-medium underline text-indigo-600">
+                    Log in
+                  </Link>
+                  <span className="ml-1">to save your data permanently.</span>
+                </p>
+              </div>
+            )}
+            
             {watchHistory.length > 0 && (
               <div className="mt-2 text-sm bg-blue-50 p-3 rounded border border-blue-200">
                 <div 

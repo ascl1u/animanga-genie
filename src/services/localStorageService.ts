@@ -1,6 +1,7 @@
 import { AnimeWatchHistoryItem, WatchHistoryFormData } from '@/types/watchHistory';
 import { v4 as uuidv4 } from 'uuid';
 import { AnimeData } from '@/services/recommendationService';
+import { WATCH_HISTORY_CHANGED_EVENT } from '@/services/watchHistoryService';
 
 // Constants for local storage keys
 const WATCH_HISTORY_KEY = 'animanga-genie-watch-history';
@@ -8,6 +9,20 @@ const RECOMMENDATIONS_KEY = 'animanga-genie-recommendations';
 
 // Helper function to generate a UUID for local items
 const generateUUID = () => uuidv4();
+
+/**
+ * Helper function to notify that watch history has changed
+ * This ensures both authenticated and non-authenticated users 
+ * trigger the same events when watch history changes
+ */
+const notifyWatchHistoryChanged = () => {
+  if (typeof window !== 'undefined') {
+    // Create and dispatch the same event used in watchHistoryService
+    const event = new CustomEvent(WATCH_HISTORY_CHANGED_EVENT);
+    window.dispatchEvent(event);
+    console.log('[LocalStorage] Dispatched watch history changed event');
+  }
+};
 
 /**
  * Get watch history from local storage
@@ -64,6 +79,9 @@ export const addToLocalWatchHistory = (watchHistoryData: WatchHistoryFormData): 
     // Save to local storage
     localStorage.setItem(WATCH_HISTORY_KEY, JSON.stringify(updatedHistory));
     
+    // Notify that watch history has changed (same as in watchHistoryService)
+    notifyWatchHistoryChanged();
+    
     return newEntry;
   } catch (error) {
     console.error('Error adding to local watch history:', error);
@@ -99,6 +117,9 @@ export const updateLocalWatchHistoryRating = (
     // Save to local storage
     localStorage.setItem(WATCH_HISTORY_KEY, JSON.stringify(updatedHistory));
     
+    // Notify that watch history has changed
+    notifyWatchHistoryChanged();
+    
     return updatedItem;
   } catch (error) {
     console.error('Error updating local watch history rating:', error);
@@ -116,6 +137,9 @@ export const deleteLocalWatchHistoryItem = (id: string): void => {
     
     // Save to local storage
     localStorage.setItem(WATCH_HISTORY_KEY, JSON.stringify(updatedHistory));
+    
+    // Notify that watch history has changed
+    notifyWatchHistoryChanged();
   } catch (error) {
     console.error('Error deleting local watch history item:', error);
     throw error;

@@ -16,8 +16,8 @@ interface RecommendationsContextType {
   isWatchHistoryLoaded: boolean;
   loadAttempts: number;
   modelLoadingProgress: number;
-  generateRecommendations: (customLimit?: number) => Promise<void>;
-  refreshRecommendations: () => Promise<void>;
+  generateRecommendations: (customLimit?: number, forceRegenerate?: boolean) => Promise<void>;
+  refreshRecommendations: (customLimit?: number, forceRegenerate?: boolean) => Promise<void>;
   feedback: Record<number, 'like' | 'dislike' | null>;
   addFeedback: (animeId: number, feedbackType: 'like' | 'dislike' | null) => void;
   isCollaborativeFilteringEnabled: boolean;

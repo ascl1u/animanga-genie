@@ -3,6 +3,8 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { User, Session } from '@supabase/supabase-js';
+import { syncLocalDataWithDatabase } from '@/services/authDataSyncService';
+import { toast } from 'react-hot-toast';
 
 type AuthState = {
   user: User | null;
@@ -121,6 +123,24 @@ export function SimpleAuthProvider({ children }: { children: React.ReactNode }) 
         password,
       });
       
+      if (!error) {
+        // Attempt to sync local data to database after successful login
+        try {
+          const syncResult = await syncLocalDataWithDatabase();
+          if (syncResult.migrated > 0) {
+            // Notify user that their data has been migrated
+            toast.success(`${syncResult.migrated} items from your watch history have been saved to your account!`);
+          }
+          if (syncResult.duplicates > 0) {
+            // Just log this, no need to notify the user
+            console.log(`${syncResult.duplicates} items were already in your account`);
+          }
+        } catch (syncError) {
+          console.error('Error syncing local data to database:', syncError);
+          // Don't return an error here, the login was still successful
+        }
+      }
+      
       return { error };
     } catch (error) {
       console.error('Sign in error:', error);
@@ -135,6 +155,20 @@ export function SimpleAuthProvider({ children }: { children: React.ReactNode }) 
         email,
         password,
       });
+      
+      if (!error) {
+        // Attempt to sync local data to database after successful signup
+        try {
+          const syncResult = await syncLocalDataWithDatabase();
+          if (syncResult.migrated > 0) {
+            // Notify user that their data has been migrated
+            toast.success(`${syncResult.migrated} items from your watch history have been saved to your account!`);
+          }
+        } catch (syncError) {
+          console.error('Error syncing local data to database:', syncError);
+          // Don't return an error here, the signup was still successful
+        }
+      }
       
       return { error };
     } catch (error) {
@@ -168,7 +202,7 @@ export function SimpleAuthProvider({ children }: { children: React.ReactNode }) 
     
     // Subscribe to auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      async (event, session) => {
         setState(current => ({
           ...current,
           session,
@@ -178,17 +212,31 @@ export function SimpleAuthProvider({ children }: { children: React.ReactNode }) 
         
         // Get user when session changes
         if (session) {
-          supabase.auth.getUser().then(({ data, error }) => {
-            if (error) {
-              console.error('Error getting user:', error);
-              return;
+          const { data, error } = await supabase.auth.getUser();
+          
+          if (error) {
+            console.error('Error getting user:', error);
+            return;
+          }
+          
+          setState(current => ({
+            ...current,
+            user: data.user,
+            isAuthenticated: true
+          }));
+          
+          // If this is a new sign in (not just a token refresh), sync local data
+          if (event === 'SIGNED_IN') {
+            try {
+              const syncResult = await syncLocalDataWithDatabase();
+              if (syncResult.migrated > 0) {
+                // Notify user that their data has been migrated
+                toast.success(`${syncResult.migrated} items from your watch history have been saved to your account!`);
+              }
+            } catch (syncError) {
+              console.error('Error syncing local data to database:', syncError);
             }
-            
-            setState(current => ({
-              ...current,
-              user: data.user,
-            }));
-          });
+          }
         }
       }
     );

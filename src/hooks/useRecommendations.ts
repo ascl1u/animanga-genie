@@ -20,6 +20,10 @@ interface UseRecommendationsOptions {
 
 // Helper function to create a hash of the watch history for comparison
 const createWatchHistoryHash = (history: AnimeWatchHistoryItem[]): string => {
+  if (!history || history.length === 0) {
+    return 'empty';
+  }
+  
   return history
     .map(item => `${item.anilist_id}-${item.rating}`)
     .sort()
@@ -118,10 +122,58 @@ export function useRecommendations({
     }
   }, [isAuthenticated, user, watchHistoryHash]);
 
+  // Effect to detect auth state changes and refresh watch history
+  useEffect(() => {
+    // Force refresh watch history and mark as changed when auth state changes
+    debugLog(`Auth state changed: ${isAuthenticated ? 'authenticated' : 'not authenticated'}`);
+    
+    // Reset the loaded state to force a reload
+    setWatchHistoryLoaded(false);
+    
+    // Mark as changed to force new recommendations to be generated
+    setWatchHistoryChanged(true);
+    
+    // If user just logged in, try to fetch their latest recommendations
+    if (isAuthenticated && user) {
+      const loadExistingRecommendations = async () => {
+        try {
+          debugLog('Attempting to load latest user recommendations after authentication');
+          // Import here to avoid circular dependencies
+          const { getLatestUserRecommendations } = await import('@/services/recommendationPersistenceService');
+          const { recommendations, watchHistoryHash } = await getLatestUserRecommendations();
+          
+          if (recommendations && recommendations.length > 0) {
+            debugLog(`Found ${recommendations.length} saved recommendations for user`);
+            setRecommendations(recommendations);
+            setStatus(prev => ({
+              ...prev,
+              isInitialized: true,
+              isError: false,
+              errorMessage: '',
+            }));
+            
+            // If we also have a watch history hash, use it to check if we need to update
+            if (watchHistoryHash) {
+              debugLog(`Setting stored watch history hash: ${watchHistoryHash}`);
+              setWatchHistoryHash(watchHistoryHash);
+            }
+          }
+        } catch (error) {
+          debugLog(`Error loading user recommendations: ${error instanceof Error ? error.message : String(error)}`);
+          // Don't set error state here, we'll just rely on normal recommendation flow
+        }
+      };
+      
+      loadExistingRecommendations();
+    }
+    
+    // Fetch the new watch history (will happen automatically in the other effect)
+  }, [isAuthenticated, user]);
+
   // Memoized function to fetch recommendations
-  const fetchRecommendations = useCallback(async (customLimit?: number) => {
+  const fetchRecommendations = useCallback(async (customLimit?: number, forceRegenerate = false) => {
     // Check if watch history has changed since last recommendation
-    if (!watchHistoryChanged && status.isInitialized) {
+    if (!watchHistoryChanged && !forceRegenerate && status.isInitialized) {
       debugLog('Watch history unchanged since last recommendation, skipping generation');
       return;
     }
@@ -212,11 +264,15 @@ export function useRecommendations({
           debugLog('Saving recommendations');
           if (isAuthenticated && user) {
             // Save to database for authenticated users
-            saveRecommendations(result.recommendations, watchHistoryHash);
+            await saveRecommendations(result.recommendations, watchHistoryHash);
           } else {
             // Save to localStorage for non-authenticated users
             saveLocalRecommendations(result.recommendations);
           }
+          
+          // Mark watch history as processed - we've now generated recommendations for current watch history
+          setWatchHistoryChanged(false);
+          debugLog('Updated watch history change status: false (processed)');
         }
         
         // Log any debug info
@@ -259,7 +315,7 @@ export function useRecommendations({
         isInitialized: true,
       }));
     }
-  }, [getUserId, isModelLoaded, limit, loadModel, preferredGenres, preferredTags, status.isInitialized, watchHistory, watchHistoryChanged, isAuthenticated, user]);
+  }, [getUserId, isModelLoaded, limit, loadModel, preferredGenres, preferredTags, status.isInitialized, watchHistory, watchHistoryChanged, isAuthenticated, user, watchHistoryHash]);
 
   // Effect to auto-load if specified
   useEffect(() => {

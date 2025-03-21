@@ -55,23 +55,12 @@ export default function RecommendationsPage() {
   // Handle normal recommendation generation
   const handleGenerateRecommendations = (e: MouseEvent) => {
     e.preventDefault();
-    // Regular generation respects watch history change status
-    console.log('Generating recommendations - respecting watch history changes');
-    generateRecommendations(undefined, false);
-  };
-  
-  // Handle force regeneration
-  const handleForceRegenerate = (e: MouseEvent) => {
-    e.preventDefault();
-    console.log('Force regenerating recommendations regardless of watch history');
     generateRecommendations(undefined, true);
   };
   
   // Handle retry
   const handleRetry = (e: MouseEvent) => {
     e.preventDefault();
-    // Always force on retry
-    console.log('Retrying recommendations generation');
     refreshRecommendations(undefined, true);
   };
 
@@ -279,41 +268,25 @@ export default function RecommendationsPage() {
               </div>
             ) : null}
             
-            <div className="flex flex-wrap gap-3 justify-center">
-              <button
-                onClick={handleGenerateRecommendations}
-                disabled={isModelLoading || isLoading || (isInitialized && !watchHistoryChanged)}
-                className="px-6 py-3 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 
+            <button
+              onClick={handleGenerateRecommendations}
+              disabled={isModelLoading || isLoading}
+              className="px-6 py-3 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 
                         focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2
                         disabled:opacity-70 disabled:cursor-not-allowed transition-colors"
-              >
-                {isModelLoading 
-                  ? 'Loading Model...' 
-                  : isLoading
-                    ? 'Generating...'
-                    : isInitialized && !watchHistoryChanged
-                      ? 'No New Data to Process'
-                      : isInitialized
-                        ? 'Generate New Recommendations'
-                        : 'Generate Recommendations'}
-              </button>
-              
-              {isInitialized && !watchHistoryChanged && (
-                <button
-                  onClick={handleForceRegenerate}
-                  disabled={isModelLoading || isLoading}
-                  className="px-6 py-3 bg-gray-600 text-white rounded-md hover:bg-gray-700 
-                          focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2
-                          disabled:opacity-70 disabled:cursor-not-allowed transition-colors"
-                >
-                  Force Regenerate
-                </button>
-              )}
-            </div>
+            >
+              {isModelLoading 
+                ? 'Loading Model...' 
+                : isLoading
+                  ? 'Generating...'
+                  : isInitialized
+                    ? 'Regenerate Recommendations'
+                    : 'Generate Recommendations'}
+            </button>
             
             {isInitialized && !watchHistoryChanged && (
               <p className="mt-2 text-sm text-amber-600">
-                Add new anime or update ratings in your watch history to generate new recommendations.
+                No changes detected in your watch history. Regenerating will use the same data.
               </p>
             )}
           </div>
@@ -505,7 +478,7 @@ export default function RecommendationsPage() {
           </p>
           <button 
             className="mt-4 bg-yellow-600 text-white py-2 px-4 rounded hover:bg-yellow-700"
-            onClick={handleForceRegenerate}
+            onClick={handleGenerateRecommendations}
           >
             Try Again
           </button>

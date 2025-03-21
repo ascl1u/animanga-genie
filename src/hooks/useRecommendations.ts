@@ -20,10 +20,6 @@ interface UseRecommendationsOptions {
 
 // Helper function to create a hash of the watch history for comparison
 const createWatchHistoryHash = (history: AnimeWatchHistoryItem[]): string => {
-  if (!history || history.length === 0) {
-    return 'empty';
-  }
-  
   return history
     .map(item => `${item.anilist_id}-${item.rating}`)
     .sort()
@@ -133,42 +129,8 @@ export function useRecommendations({
     // Mark as changed to force new recommendations to be generated
     setWatchHistoryChanged(true);
     
-    // If user just logged in, try to fetch their latest recommendations
-    if (isAuthenticated && user) {
-      const loadExistingRecommendations = async () => {
-        try {
-          debugLog('Attempting to load latest user recommendations after authentication');
-          // Import here to avoid circular dependencies
-          const { getLatestUserRecommendations } = await import('@/services/recommendationPersistenceService');
-          const { recommendations, watchHistoryHash } = await getLatestUserRecommendations();
-          
-          if (recommendations && recommendations.length > 0) {
-            debugLog(`Found ${recommendations.length} saved recommendations for user`);
-            setRecommendations(recommendations);
-            setStatus(prev => ({
-              ...prev,
-              isInitialized: true,
-              isError: false,
-              errorMessage: '',
-            }));
-            
-            // If we also have a watch history hash, use it to check if we need to update
-            if (watchHistoryHash) {
-              debugLog(`Setting stored watch history hash: ${watchHistoryHash}`);
-              setWatchHistoryHash(watchHistoryHash);
-            }
-          }
-        } catch (error) {
-          debugLog(`Error loading user recommendations: ${error instanceof Error ? error.message : String(error)}`);
-          // Don't set error state here, we'll just rely on normal recommendation flow
-        }
-      };
-      
-      loadExistingRecommendations();
-    }
-    
     // Fetch the new watch history (will happen automatically in the other effect)
-  }, [isAuthenticated, user]);
+  }, [isAuthenticated]);
 
   // Memoized function to fetch recommendations
   const fetchRecommendations = useCallback(async (customLimit?: number, forceRegenerate = false) => {
@@ -264,15 +226,11 @@ export function useRecommendations({
           debugLog('Saving recommendations');
           if (isAuthenticated && user) {
             // Save to database for authenticated users
-            await saveRecommendations(result.recommendations, watchHistoryHash);
+            saveRecommendations(result.recommendations, watchHistoryHash);
           } else {
             // Save to localStorage for non-authenticated users
             saveLocalRecommendations(result.recommendations);
           }
-          
-          // Mark watch history as processed - we've now generated recommendations for current watch history
-          setWatchHistoryChanged(false);
-          debugLog('Updated watch history change status: false (processed)');
         }
         
         // Log any debug info
@@ -315,7 +273,7 @@ export function useRecommendations({
         isInitialized: true,
       }));
     }
-  }, [getUserId, isModelLoaded, limit, loadModel, preferredGenres, preferredTags, status.isInitialized, watchHistory, watchHistoryChanged, isAuthenticated, user, watchHistoryHash]);
+  }, [getUserId, isModelLoaded, limit, loadModel, preferredGenres, preferredTags, status.isInitialized, watchHistory, watchHistoryChanged, isAuthenticated, user]);
 
   // Effect to auto-load if specified
   useEffect(() => {

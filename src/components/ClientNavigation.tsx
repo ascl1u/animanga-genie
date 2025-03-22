@@ -27,6 +27,9 @@ export default function ClientNavigation() {
                 <Link href="/search" className="text-gray-700 hover:text-indigo-500">
                   Search
                 </Link>
+                <Link href="/polls" className="text-gray-700 hover:text-indigo-500">
+                  Polls
+                </Link>
               </div>
             </div>
           </div>
@@ -82,6 +85,9 @@ export default function ClientNavigation() {
                 </Link>
                 <Link href="/my-anime" className="text-gray-700 hover:text-indigo-500">
                   My Anime
+                </Link>
+                <Link href="/polls" className="text-gray-700 hover:text-indigo-500">
+                  Polls
                 </Link>
               </div>
             </div>

@@ -129,7 +129,7 @@ export default async function PollPage({ params }: PollPageProps) {
         ← Back to all polls
       </Link>
       
-      <h1 className="text-2xl font-bold mb-6 text-gray-900">{poll.question}</h1>
+      <h1 className="text-2xl font-bold mb-6">{poll.question}</h1>
       
       {user && userVote !== undefined ? (
         <>
@@ -146,7 +146,7 @@ export default async function PollPage({ params }: PollPageProps) {
               <VotingForm poll={poll} userId={user.id} />
             </>
           ) : (
-            <div className="bg-white rounded-lg border border-gray-200 shadow-md p-6 mb-6">
+            <div className="bg-white rounded-lg border border-gray-200 text-gray-900 shadow-md p-6 mb-6">
               <p className="mb-4">You need to be logged in to vote in polls and see results.</p>
               <Link 
                 href="/login"

@@ -3,10 +3,10 @@ import type { NextConfig } from 'next';
 const nextConfig: NextConfig = {
   /* config options here */
   images: {
-    domains: [
-      's4.anilist.co',  // Main AniList CDN domain
-      'media.kitsu.io',  // Additional CDN sometimes used by AniList
-      'img.anili.st',    // Another alternative AniList CDN
+    remotePatterns: [
+      { protocol: 'https', hostname: 's4.anilist.co' },
+      { protocol: 'https', hostname: 'media.kitsu.io' },
+      { protocol: 'https', hostname: 'img.anili.st' }
     ],
   },
   // Add configuration for ONNX Runtime WASM files
@@ -55,16 +55,32 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        // Add cross-origin headers for model files
-        source: '/models/:path*',
+        // Add caching for static assets
+        source: '/_next/static/:path*',
         headers: [
           {
-            key: 'Cross-Origin-Embedder-Policy',
-            value: 'require-corp',
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
           },
+        ],
+      },
+      {
+        // Add caching for images
+        source: '/_next/image/:path*',
+        headers: [
           {
-            key: 'Cross-Origin-Opener-Policy',
-            value: 'same-origin',
+            key: 'Cache-Control',
+            value: 'public, max-age=86400, stale-while-revalidate=604800',
+          },
+        ],
+      },
+      {
+        // Add caching for public assets
+        source: '/images/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=86400, stale-while-revalidate=604800',
           },
         ],
       },

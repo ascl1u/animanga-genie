@@ -53,6 +53,16 @@ animanga-genie/
 ├── src/
 │   ├── app/                             # Main application code using the App Router
 │   │   ├── api/                         # API routes
+│   │   │   ├── anilist/                 # AniList API integration routes
+│   │   │   └── auth/                    # Authentication API routes
+│   │   ├── admin/                       # Admin functionality
+│   │   │   ├── polls/                   # Poll management for admins
+│   │   │   ├── setup-admin-role/        # Admin role setup utilities
+│   │   │   └── seed-poll/               # Utilities to seed initial polls
+│   │   ├── polls/                       # Polls feature pages
+│   │   │   ├── create/                  # Create new poll page
+│   │   │   ├── [id]/                    # Dynamic poll page by ID
+│   │   │   └── page.tsx                 # Polls landing page
 │   │   ├── auth/                        # Auth-related pages and routes
 │   │   ├── login/                       # Login page
 │   │   ├── signup/                      # Signup page
@@ -68,19 +78,33 @@ animanga-genie/
 │   ├── components/                      # Reusable UI components
 │   │   ├── ui/                          # Basic UI components
 │   │   ├── AnimeSearch.tsx              # Anime search component
+│   │   ├── AuthAwareWrapper.tsx         # Authentication-aware component wrapper
 │   │   ├── ClientNavigation.tsx         # Client-side navigation component
+│   │   ├── PollResultsCard.tsx          # Component to display poll results
+│   │   ├── RatingEditor.tsx             # Component to edit anime ratings
 │   │   ├── RecommendationCard.tsx       # Component to display anime recommendations
 │   │   ├── SearchBar.tsx                # Search input component
 │   │   ├── SimpleAuthProvider.tsx       # Authentication context provider
+│   │   ├── VotingForm.tsx               # Form for voting in polls
 │   │   ├── WatchHistoryForm.tsx         # Form to add anime to watch history
 │   │   ├── WatchHistoryImport.tsx       # Component to import watch history
-│   │   ├── WatchHistoryList.tsx         # Component to display watch history
-│   │   └── RatingEditor.tsx             # Component to edit anime ratings
+│   │   └── WatchHistoryList.tsx         # Component to display watch history
 │   ├── context/                         # React context providers
 │   ├── constants/                       # Application constants
 │   ├── hooks/                           # Custom React hooks
 │   ├── services/                        # Service layer for external APIs
+│   │   ├── collaborativeFilteringService.ts    # Collaborative filtering recommendation service
+│   │   ├── dataAccessService.ts                # Data access and persistence service
+│   │   ├── localStorageService.ts              # Service for managing local storage data
+│   │   ├── modelService.ts                     # Service for model integration
+│   │   ├── onnxModelService.ts                 # ONNX model service for recommendations
+│   │   ├── pollService.ts                      # Service for poll functionality
+│   │   ├── recommendationPersistenceService.ts # Service for storing recommendations
+│   │   ├── recommendationService.ts            # Main recommendation engine service
+│   │   └── watchHistoryService.ts              # Service for managing watch history
 │   ├── types/                           # TypeScript type definitions
+│   │   ├── polls.ts                     # Types for poll functionality
+│   │   └── watchHistory.ts              # Types for watch history functionality
 │   ├── utils/                           # Utility functions
 │   │   ├── supabase/                    # Supabase utilities
 │   │   │   ├── client.ts                # Supabase client for browser
@@ -95,7 +119,16 @@ animanga-genie/
 ├── public/                              # Static assets
 ├── scripts/                             # Utility scripts
 ├── data/                                # Static data files
+│   ├── anime_catalog.json               # Catalog of anime data
+│   ├── user_ratings.json                # User ratings data for model training
+│   ├── model/                           # ML model files
+│   └── processed/                       # Processed data for ML
 ├── memory-bank/                         # Project documentation
+│   ├── architecture.md                  # This architecture documentation
+│   ├── implementation-plan.md           # Implementation plan and roadmap
+│   ├── project-design-doc.md            # Project design documentation
+│   ├── progress.md                      # Progress tracking
+│   └── tech-stack.md                    # Technology stack documentation
 └── [configuration files]
 ```
 
@@ -164,6 +197,27 @@ The application uses the following database tables:
 - watch_history_hash (to track if recommendations need updating)
 - created_at, updated_at timestamps
 
+### polls
+**Purpose:** Stores anime polls for community voting.
+**Description:** Contains:
+- id (UUID primary key)
+- title (poll title)
+- description (poll description)
+- options (JSONB array of anime options)
+- created_by (user_id of creator)
+- is_active (boolean flag)
+- end_date (when poll ends)
+- created_at, updated_at timestamps
+
+### poll_votes
+**Purpose:** Tracks user votes on polls.
+**Description:** Contains:
+- id (UUID primary key)
+- poll_id (reference to polls table)
+- user_id (reference to auth.users)
+- option_id (ID of the voted option)
+- created_at timestamp
+
 ### testing
 **Purpose:** Used for testing Supabase connection.
 **Description:** Simple table for testing database connectivity.
@@ -175,6 +229,7 @@ The application uses the following database tables:
 **Files:**
 - src/utils/auth.ts
 - src/components/SimpleAuthProvider.tsx
+- src/components/AuthAwareWrapper.tsx
 - src/app/login/page.tsx
 - src/app/signup/page.tsx
 - src/app/reset-password/page.tsx
@@ -186,6 +241,7 @@ The application uses the following database tables:
 - src/components/AnimeSearch.tsx
 - src/components/SearchBar.tsx
 - src/app/search/page.tsx
+- src/app/api/anilist/route.ts
 
 ### Watch History Management
 **Implementation:** Allows users to track anime they've watched and rate them.
@@ -194,13 +250,32 @@ The application uses the following database tables:
 - src/components/WatchHistoryList.tsx
 - src/components/WatchHistoryImport.tsx
 - src/components/RatingEditor.tsx
+- src/services/watchHistoryService.ts
+- src/services/localStorageService.ts
 - src/app/my-anime/page.tsx
 
 ### Recommendations
-**Implementation:** Generates and displays anime recommendations based on user preferences.
+**Implementation:** Generates and displays anime recommendations based on user preferences using collaborative filtering and ML models.
 **Files:**
 - src/components/RecommendationCard.tsx
+- src/services/recommendationService.ts
+- src/services/recommendationPersistenceService.ts
+- src/services/collaborativeFilteringService.ts
+- src/services/modelService.ts
+- src/services/onnxModelService.ts
 - src/app/recommendations/page.tsx
+
+### Polls System
+**Implementation:** Allows users to create and vote in anime-related polls.
+**Files:**
+- src/components/VotingForm.tsx
+- src/components/PollResultsCard.tsx
+- src/services/pollService.ts
+- src/types/polls.ts
+- src/app/polls/page.tsx
+- src/app/polls/create/page.tsx
+- src/app/polls/[id]/page.tsx
+- src/app/admin/polls/page.tsx
 
 ### Navigation
 **Implementation:** Provides site navigation with authentication status awareness.
@@ -208,13 +283,22 @@ The application uses the following database tables:
 - src/components/ClientNavigation.tsx
 - src/app/layout.tsx
 
+### Data Access Layer
+**Implementation:** Provides unified data access to both local and remote data sources.
+**Files:**
+- src/services/dataAccessService.ts
+- src/services/localStorageService.ts
+
 ## Row Level Security (RLS)
 
 All Supabase tables have Row Level Security enabled with policies that:
 - Allow users to only view/modify their own data
 - Prevent access to other users' data
+- Admin users have additional permissions for poll management
 
 ## Important Notes
 - The `watch_history` field in `user_preferences` is deprecated - use the `anime_watch_history` table instead.
 - Recommendations are stored as JSONB arrays in the `recommendations` field.
 - The `watch_history_hash` field helps determine if recommendations need to be regenerated based on watch history changes.
+- The polls system allows for community engagement through voting on favorite anime.
+- Admin users have special privileges for managing polls and other content.

@@ -50,7 +50,7 @@ export default function MyAnimePage() {
             </p>
             {!isAuthenticated && (
               <p className="mt-2 text-sm text-orange-600">
-                You are using AniManga Genie without an account. Your data will be saved in your browser, but will be lost if you clear your browser data.
+                You are using AniManga Genie without an account.
                 <Link href="/signup" className="ml-2 font-medium underline text-indigo-600">
                   Sign up
                 </Link>

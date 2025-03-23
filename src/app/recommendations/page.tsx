@@ -10,7 +10,7 @@ import { useState } from 'react';
 
 export default function RecommendationsPage() {
   const { isAuthenticated } = useAuth();
-  const { isModelLoaded, isModelLoading } = useModelContext();
+  const { isModelLoading } = useModelContext();
   const {
     recommendations,
     watchHistory,
@@ -27,13 +27,10 @@ export default function RecommendationsPage() {
     feedback,
     addFeedback,
     isCollaborativeFilteringEnabled,
-    similarUsers,
     watchHistoryChanged
   } = useRecommendations();
 
-  // State for debug mode, test limit, and watch history dropdown
-  const [showDebug, setShowDebug] = useState(false);
-  const [testLimit, setTestLimit] = useState(3);
+  // State for watch history dropdown
   const [showWatchHistory, setShowWatchHistory] = useState(false);
 
   const handleLike = (animeId: number) => {
@@ -42,14 +39,6 @@ export default function RecommendationsPage() {
 
   const handleDislike = (animeId: number) => {
     addFeedback(animeId, 'dislike');
-  };
-
-  // Generate test recommendations with limited count
-  const handleTestRecommendations = (e: MouseEvent) => {
-    e.preventDefault();
-    // Call the hook with limited count
-    console.log(`Generating test recommendations with limit: ${testLimit}`);
-    generateRecommendations(testLimit);
   };
 
   // Handle normal recommendation generation
@@ -85,7 +74,7 @@ export default function RecommendationsPage() {
             {!isAuthenticated && (
               <div className="mt-8 p-4 bg-blue-50 rounded-lg">
                 <p className="text-sm text-blue-600">
-                  You are using AniManga Genie without an account. Your data will be saved in your browser, but will be lost if you clear your browser data.
+                  You are using AniManga Genie without an account.
                   <Link href="/signup" className="ml-2 font-medium underline text-indigo-600">
                     Sign up
                   </Link>
@@ -106,132 +95,6 @@ export default function RecommendationsPage() {
   return (
     <div className="container mx-auto py-8 px-4">
       <h1 className="text-3xl font-bold mb-6">Your Recommendations</h1>
-      
-      {/* Debug Toggle */}
-      <div className="mb-4 flex justify-end">
-        <button
-          onClick={() => setShowDebug(!showDebug)}
-          className="px-3 py-1 bg-gray-200 text-gray-800 rounded-md text-sm hover:bg-gray-300"
-        >
-          {showDebug ? 'Hide Debug' : 'Show Debug'}
-        </button>
-      </div>
-      
-      {/* Debug info panel */}
-      {showDebug && (
-        <div className="bg-gray-100 rounded-lg shadow p-4 mb-6 text-xs font-mono overflow-auto max-h-80">
-          <h3 className="font-bold mb-2">Debug Information:</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p><strong>Model Loaded:</strong> {isModelLoaded ? 'Yes' : 'No'}</p>
-              <p><strong>Model Loading:</strong> {isModelLoading ? 'Yes' : 'No'}</p>
-              <p><strong>Status:</strong> {isLoading ? 'Loading' : isError ? 'Error' : isInitialized ? 'Ready' : 'Not Initialized'}</p>
-              <p><strong>Watch History Items:</strong> {watchHistory.length}</p>
-              <p><strong>Load Attempts:</strong> {loadAttempts}</p>
-              <p><strong>Recommendations:</strong> {recommendations.length}</p>
-              <p><strong>Collaborative Filtering:</strong> {isCollaborativeFilteringEnabled ? 'Enabled' : 'Disabled'}</p>
-              
-              {recommendations.length > 0 && recommendations[0].score && (
-                <p><strong>Top Score:</strong> {recommendations[0].score.toFixed(3)}</p>
-              )}
-              
-              {/* User embedding info */}
-              {recommendations.length > 0 && recommendations[0]._debugInfo?.userEmbedding && (
-                <div className="mt-3">
-                  <p><strong>User Embedding:</strong></p>
-                  <p className="ml-3">Dimension: {recommendations[0]._debugInfo.userEmbedding.dimension}</p>
-                  {recommendations[0]._debugInfo.userEmbedding.sample && (
-                    <p className="ml-3 truncate">Sample: [{recommendations[0]._debugInfo.userEmbedding.sample.map((v: number) => v.toFixed(2)).join(', ')}]</p>
-                  )}
-                </div>
-              )}
-              
-              {/* Similar users info */}
-              {similarUsers && similarUsers.length > 0 && (
-                <div className="mt-3">
-                  <p><strong>Similar Users:</strong></p>
-                  <ul className="list-disc list-inside ml-3">
-                    {similarUsers.slice(0, 3).map((user: {userId: string, similarity: number}, index: number) => (
-                      <li key={index} className="truncate">
-                        {user.userId.substring(0, 8)}... (similarity: {(user.similarity * 100).toFixed(1)}%)
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-            <div>
-              <div className="mb-2">
-                <p className="font-bold mb-1">Test Options:</p>
-                <div className="flex items-center space-x-2">
-                  <label className="whitespace-nowrap">
-                    Limit:
-                    <input 
-                      type="number" 
-                      min="1" 
-                      max="10" 
-                      value={testLimit}
-                      onChange={(e) => setTestLimit(Number(e.target.value))}
-                      className="ml-2 w-16 px-2 py-1 border rounded"
-                    />
-                  </label>
-                  <button
-                    onClick={handleTestRecommendations}
-                    className="px-3 py-1 bg-indigo-600 text-white text-xs rounded-md hover:bg-indigo-700"
-                    disabled={isLoading}
-                  >
-                    Test ({testLimit})
-                  </button>
-                </div>
-              </div>
-              
-              {/* Negative preferences */}
-              {recommendations.length > 0 && recommendations[0]._debugInfo?.negativePreferences && (
-                <div className="mb-2">
-                  <p className="font-bold mb-1">Negative Preferences:</p>
-                  {recommendations[0]._debugInfo.negativePreferences.genres && recommendations[0]._debugInfo.negativePreferences.genres.length > 0 && (
-                    <div className="ml-3">
-                      <p><strong>Genres:</strong> {recommendations[0]._debugInfo.negativePreferences.genres.slice(0, 5).join(', ')}{recommendations[0]._debugInfo.negativePreferences.genres.length > 5 ? '...' : ''}</p>
-                    </div>
-                  )}
-                  {recommendations[0]._debugInfo.negativePreferences.tags && recommendations[0]._debugInfo.negativePreferences.tags.length > 0 && (
-                    <div className="ml-3">
-                      <p><strong>Tags:</strong> {recommendations[0]._debugInfo.negativePreferences.tags.slice(0, 5).join(', ')}{recommendations[0]._debugInfo.negativePreferences.tags.length > 5 ? '...' : ''}</p>
-                    </div>
-                  )}
-                  
-                  {/* Display related anime that were penalized */}
-                  {recommendations[0]._debugInfo.negativePreferences.relatedAnime && recommendations[0]._debugInfo.negativePreferences.relatedAnime.length > 0 && (
-                    <div className="ml-3 mt-1">
-                      <p><strong>Related Anime Penalties:</strong></p>
-                      <ul className="list-disc pl-4 text-sm">
-                        {recommendations[0]._debugInfo.negativePreferences.relatedAnime.map((anime, index) => (
-                          <li key={index}>
-                            {anime.title} (ID: {anime.id}) - Penalty: {(anime.penalty * 100).toFixed(0)}% - <span className="italic">{anime.reason}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              )}
-              
-              {watchHistory.length > 0 && (
-                <div>
-                  <p className="font-bold mb-1">Watch History:</p>
-                  <ul className="list-disc pl-4">
-                    {watchHistory.map((item) => (
-                      <li key={item.id}>
-                        {item.title} (ID: {item.anilist_id}) - Rated: {item.rating}/10
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
       
       <div className="bg-white rounded-lg shadow p-6 mb-6">
         <p className="text-gray-600 mb-4">
@@ -350,7 +213,7 @@ export default function RecommendationsPage() {
           {!isAuthenticated && (
             <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
               <p className="text-sm text-blue-600">
-                You are using AniManga Genie without an account. Your data will be saved in your browser, but will be lost if you clear your browser data.
+                You are using AniManga Genie without an account.
                 <Link href="/signup" className="ml-2 font-medium underline text-indigo-600">
                   Sign up
                 </Link>
@@ -389,7 +252,7 @@ export default function RecommendationsPage() {
           {!isAuthenticated && (
             <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
               <p className="text-sm text-blue-600">
-                You are using AniManga Genie without an account. Your data will be saved in your browser, but will be lost if you clear your browser data.
+                You are using AniManga Genie without an account.
                 <Link href="/signup" className="ml-2 font-medium underline text-indigo-600">
                   Sign up
                 </Link>
@@ -436,7 +299,7 @@ export default function RecommendationsPage() {
             {!isAuthenticated && (
               <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
                 <p className="text-sm text-blue-600">
-                  You are using AniManga Genie without an account. Your data will be saved in your browser, but will be lost if you clear your browser data.
+                  You are using AniManga Genie without an account.
                   <Link href="/signup" className="ml-2 font-medium underline text-indigo-600">
                     Sign up
                   </Link>

@@ -5,9 +5,7 @@ import {
   getLocalWatchHistory, 
   addToLocalWatchHistory, 
   updateLocalWatchHistoryRating, 
-  deleteLocalWatchHistoryItem, 
-  getLocalRecommendations,
-  saveLocalRecommendations
+  deleteLocalWatchHistoryItem
 } from './localStorageService';
 import {
   getUserWatchHistory,
@@ -119,8 +117,8 @@ class DataAccessService {
         return [];
       }
     } else {
-      // Get from localStorage for unauthenticated users
-      return getLocalRecommendations() || [];
+      // No longer retrieving from localStorage for unauthenticated users
+      return [];
     }
   }
 
@@ -135,10 +133,8 @@ class DataAccessService {
     if (authenticated) {
       // Save to database for authenticated users
       await saveRecommendations(recommendations, watchHistoryHash);
-    } else {
-      // Save to localStorage for unauthenticated users
-      saveLocalRecommendations(recommendations, watchHistoryHash);
     }
+    // No longer handling localStorage for unauthenticated users
   }
 
   /**

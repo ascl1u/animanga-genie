@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState, useCallback } from 'rea
 import { createClient } from '@/utils/supabase/client';
 import { User, Session } from '@supabase/supabase-js';
 import { toast } from 'react-hot-toast';
+import { clearLocalStorage } from '@/services/localStorageService';
 
 type AuthState = {
   user: User | null;
@@ -141,6 +142,8 @@ export function SimpleAuthProvider({
       });
       
       if (!error) {
+        // Clear localStorage when user signs in successfully
+        clearLocalStorage();
         toast.success('Logged in successfully!');
       }
       
@@ -210,6 +213,12 @@ export function SimpleAuthProvider({
           if (error) {
             console.error('Error getting user:', error);
             return;
+          }
+          
+          // Clear localStorage when user becomes authenticated
+          if (event === 'SIGNED_IN') {
+            console.log('[AUTH] User signed in, clearing localStorage data from unauthenticated session');
+            clearLocalStorage();
           }
           
           setState(current => ({

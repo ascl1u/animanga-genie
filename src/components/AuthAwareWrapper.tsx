@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/components/SimpleAuthProvider';
+import { clearLocalStorage } from '@/services/localStorageService';
 
 interface AuthAwareWrapperProps {
   children: React.ReactNode;
@@ -20,11 +21,19 @@ interface AuthAwareWrapperProps {
 export const AuthAwareWrapper: React.FC<AuthAwareWrapperProps> = ({ children }) => {
   const { isAuthenticated, user } = useAuth();
   const [key, setKey] = useState(`auth-${isAuthenticated}-${user?.id || 'none'}`);
+  const [prevAuthState, setPrevAuthState] = useState(isAuthenticated);
   
   // Reset key when auth state changes to force remounting
   useEffect(() => {
+    // Clear localStorage if transitioning from unauthenticated to authenticated
+    if (!prevAuthState && isAuthenticated) {
+      console.log('[AuthAwareWrapper] Transitioning from unauthenticated to authenticated state, clearing localStorage');
+      clearLocalStorage();
+    }
+    
+    setPrevAuthState(isAuthenticated);
     setKey(`auth-${isAuthenticated}-${user?.id || 'none'}-${Date.now()}`);
-  }, [isAuthenticated, user?.id]);
+  }, [isAuthenticated, user?.id, prevAuthState]);
   
   return (
     <React.Fragment key={key}>
@@ -63,6 +72,12 @@ export function AuthAwareWrapperWithLoading({
   useEffect(() => {
     // If auth state changed
     if (prevAuthState !== isAuthenticated) {
+      // Clear localStorage if transitioning from unauthenticated to authenticated
+      if (!prevAuthState && isAuthenticated) {
+        console.log('[AuthAwareWrapperWithLoading] Transitioning from unauthenticated to authenticated state, clearing localStorage');
+        clearLocalStorage();
+      }
+      
       setIsTransitioning(true);
       
       // Short delay before remounting to allow for transitions

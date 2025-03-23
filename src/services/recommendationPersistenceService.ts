@@ -100,7 +100,13 @@ export const loadRecommendations = async (
     }
     
     console.log(`[DB] Loading recommendations for user ${user.id}`);
-    console.log(`[DB] Looking for watch history hash: ${watchHistoryHash}`);
+    
+    // If no hash provided, we can still load recommendations but won't validate against hash
+    if (watchHistoryHash) {
+      console.log(`[DB] Looking for watch history hash: ${watchHistoryHash}`);
+    } else {
+      console.log('[DB] No watch history hash provided, loading most recent recommendations');
+    }
     
     const { data, error } = await supabase
       .from('anime_recommendations')
@@ -121,7 +127,8 @@ export const loadRecommendations = async (
     const storedData = data as StoredRecommendations;
     
     // Check if the recommendations are still valid based on watch history hash
-    if (storedData.watch_history_hash !== watchHistoryHash) {
+    // Only validate if a hash was provided
+    if (watchHistoryHash && storedData.watch_history_hash !== watchHistoryHash) {
       console.log(`[DB] Watch history has changed - recommendations need to be regenerated`);
       console.log(`[DB] Stored hash: ${storedData.watch_history_hash}, Current hash: ${watchHistoryHash}`);
       return null;

@@ -71,6 +71,46 @@ export function useRecommendations({
   }, []);
   
   /**
+   * Fetch stored recommendations if available
+   */
+  const fetchStoredRecommendations = useCallback(async (history: AnimeWatchHistoryItem[]) => {
+    if (!isAuthenticated || history.length === 0) {
+      console.log('[RECS] Not fetching stored recommendations - user not authenticated or no watch history');
+      return false;
+    }
+
+    try {
+      setStatus(prev => ({ ...prev, isLoading: true }));
+      
+      // Create a hash of the current watch history to compare with stored recommendations
+      const watchHistoryHash = dataAccessService.createWatchHistoryHash(history);
+      console.log(`[RECS] Fetching stored recommendations with hash: ${watchHistoryHash}`);
+      
+      const storedRecommendations = await dataAccessService.getRecommendations(watchHistoryHash);
+      
+      if (storedRecommendations && storedRecommendations.length > 0) {
+        console.log(`[RECS] Found ${storedRecommendations.length} stored recommendations`);
+        setRecommendations(storedRecommendations);
+        setStatus(prev => ({
+          ...prev,
+          isLoading: false,
+          isInitialized: true,
+          watchHistoryChanged: false
+        }));
+        return true;
+      }
+      
+      console.log('[RECS] No valid stored recommendations found');
+      setStatus(prev => ({ ...prev, isLoading: false }));
+      return false;
+    } catch (error) {
+      console.error('[RECS] Error fetching stored recommendations:', error);
+      setStatus(prev => ({ ...prev, isLoading: false }));
+      return false;
+    }
+  }, [isAuthenticated]);
+  
+  /**
    * Reset state on authentication changes
    */
   useEffect(() => {
@@ -91,7 +131,12 @@ export function useRecommendations({
     });
     
     // Fetch watch history after auth change
-    fetchWatchHistory();
+    fetchWatchHistory().then(history => {
+      // For authenticated users, try to fetch stored recommendations
+      if (isAuthenticated && history.length > 0) {
+        fetchStoredRecommendations(history);
+      }
+    });
     
     // For unauthenticated users, set up cleanup on tab close
     if (!isAuthenticated) {
@@ -104,7 +149,7 @@ export function useRecommendations({
         window.removeEventListener('beforeunload', handleBeforeUnload);
       };
     }
-  }, [isAuthenticated, user?.id, fetchWatchHistory]);
+  }, [isAuthenticated, user?.id, fetchWatchHistory, fetchStoredRecommendations]);
   
   /**
    * Core function to generate recommendations
@@ -246,9 +291,28 @@ export function useRecommendations({
   useEffect(() => {
     // Only load if autoLoad is enabled, we have watch history, and haven't initialized yet
     if (autoLoad && !status.isInitialized && status.watchHistoryLoaded && watchHistory.length > 0) {
-      generateRecommendations();
+      // For authenticated users, try to load stored recommendations first
+      if (isAuthenticated) {
+        fetchStoredRecommendations(watchHistory).then(foundStoredRecommendations => {
+          // If no stored recommendations were found, generate new ones
+          if (!foundStoredRecommendations) {
+            generateRecommendations();
+          }
+        });
+      } else {
+        // For anonymous users, always generate new recommendations
+        generateRecommendations();
+      }
     }
-  }, [autoLoad, status.isInitialized, status.watchHistoryLoaded, watchHistory, generateRecommendations]);
+  }, [
+    autoLoad,
+    status.isInitialized,
+    status.watchHistoryLoaded,
+    watchHistory,
+    isAuthenticated,
+    fetchStoredRecommendations,
+    generateRecommendations
+  ]);
   
   /**
    * Load recommendations for authenticated users if watch history changes
@@ -277,6 +341,7 @@ export function useRecommendations({
     refreshRecommendations,
     isCollaborativeFilteringEnabled: status.collaborativeFilteringEnabled,
     similarUsers,
-    watchHistoryChanged: status.watchHistoryChanged
+    watchHistoryChanged: status.watchHistoryChanged,
+    fetchStoredRecommendations: () => fetchStoredRecommendations(watchHistory)
   };
 } 

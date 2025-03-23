@@ -27,7 +27,8 @@ export default function RecommendationsPage() {
     feedback,
     addFeedback,
     isCollaborativeFilteringEnabled,
-    watchHistoryChanged
+    watchHistoryChanged,
+    fetchStoredRecommendations
   } = useRecommendations();
 
   // State for watch history dropdown
@@ -51,6 +52,17 @@ export default function RecommendationsPage() {
   const handleRetry = (e: MouseEvent) => {
     e.preventDefault();
     refreshRecommendations();
+  };
+
+  // Handle fetching stored recommendations
+  const handleFetchStoredRecommendations = async (e: MouseEvent) => {
+    e.preventDefault();
+    
+    if (!isAuthenticated) {
+      return; // Only for authenticated users
+    }
+    
+    fetchStoredRecommendations();
   };
 
   // If no watch history, show message
@@ -149,20 +161,43 @@ export default function RecommendationsPage() {
             <button
               onClick={handleGenerateRecommendations}
               disabled={isModelLoading || isLoading || (isInitialized && !watchHistoryChanged)}
-              className="px-6 py-3 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 
-                        focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2
-                        disabled:opacity-70 disabled:cursor-not-allowed transition-colors"
+              className={`px-6 py-3 rounded-md font-medium shadow-sm flex items-center 
+                ${isModelLoading || isLoading || (isInitialized && !watchHistoryChanged) 
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                  : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
             >
-              {isModelLoading 
-                ? 'Loading Model...' 
-                : isLoading
-                  ? 'Generating...'
-                  : isInitialized && !watchHistoryChanged
-                    ? 'Up to Date'
-                    : isInitialized
-                      ? 'Generate New Recommendations'
-                      : 'Generate Recommendations'}
+              {isLoading ? (
+                <>
+                  <div className="w-5 h-5 mr-3">
+                    <div className="w-full h-full border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 mr-2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                  </svg>
+                  Generate Recommendations
+                </>
+              )}
             </button>
+            
+            {isAuthenticated && (
+              <button
+                onClick={handleFetchStoredRecommendations}
+                disabled={isLoading}
+                className={`mt-3 px-6 py-3 rounded-md font-medium shadow-sm flex items-center 
+                  ${isLoading 
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                    : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 mr-2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9.75v6.75m0 0l-3-3m3 3l3-3m-8.25 6a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
+                </svg>
+                Load Saved Recommendations
+              </button>
+            )}
             
             {isInitialized && !watchHistoryChanged && (
               <p className="mt-2 text-sm text-amber-600">

@@ -24,6 +24,7 @@ interface RecommendationsContextType {
   isCollaborativeFilteringEnabled: boolean;
   similarUsers: Array<{userId: string, similarity: number}>;
   watchHistoryChanged: boolean;
+  fetchStoredRecommendations: () => Promise<boolean>;
 }
 
 const initialRecommendationsContext: RecommendationsContextType = {
@@ -43,7 +44,8 @@ const initialRecommendationsContext: RecommendationsContextType = {
   addFeedback: () => {},
   isCollaborativeFilteringEnabled: false,
   similarUsers: [],
-  watchHistoryChanged: true
+  watchHistoryChanged: true,
+  fetchStoredRecommendations: async () => false
 };
 
 const RecommendationsContext = createContext<RecommendationsContextType>(initialRecommendationsContext);

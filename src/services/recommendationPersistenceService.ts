@@ -51,15 +51,51 @@ export const saveRecommendations = async (
     const localStorageCheck = localStorage.getItem('animanga-genie-recommendations');
     console.log(`[DB] Before DB save, localStorage has recommendations: ${!!localStorageCheck}`);
     
-    const { data, error } = await supabase
+    // First check if the user already has a recommendations record
+    const { data: existingRecord, error: fetchError } = await supabase
       .from('anime_recommendations')
-      .upsert({
-        user_id: user.id,
-        recommendations: simplifiedRecommendations,
-        watch_history_hash: watchHistoryHash
-      })
-      .select()
+      .select('id')
+      .eq('user_id', user.id)
       .single();
+    
+    let data;
+    let error;
+    
+    if (fetchError && fetchError.code !== 'PGRST116') {
+      console.error('[DB] Error checking for existing recommendations:', fetchError);
+      return null;
+    }
+    
+    // Update the record with new data
+    const recordToUpsert = {
+      user_id: user.id,
+      recommendations: simplifiedRecommendations,
+      watch_history_hash: watchHistoryHash
+    };
+    
+    // If there's an existing record, include its ID to ensure we update the same record
+    if (existingRecord) {
+      console.log('[DB] Updating existing recommendations record');
+      const { data: updatedData, error: updateError } = await supabase
+        .from('anime_recommendations')
+        .update(recordToUpsert)
+        .eq('id', existingRecord.id)
+        .select()
+        .single();
+      
+      data = updatedData;
+      error = updateError;
+    } else {
+      console.log('[DB] Creating new recommendations record');
+      const { data: insertedData, error: insertError } = await supabase
+        .from('anime_recommendations')
+        .insert(recordToUpsert)
+        .select()
+        .single();
+      
+      data = insertedData;
+      error = insertError;
+    }
     
     if (error) {
       console.error('[DB] Error saving recommendations:', error);

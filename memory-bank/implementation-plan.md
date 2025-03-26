@@ -1,116 +1,154 @@
-# Implementation Plan: Simplifying the `useRecommendations` Hook
+# Recommendation Model Pipeline Enhancement Plan
 
-## Current Issues
+## Overview
+This document outlines the plan to enhance our anime recommendation model by incorporating additional features from our expanded anime dataset. The goal is to improve recommendation quality by leveraging anime relationships, studio information, and other metadata while maintaining model efficiency.
 
-Based on the code review, the current `useRecommendations` hook suffers from:
+## 1. Data Preprocessing Enhancement
 
-1. **Overcomplicated State Management**: Maintains too many state variables (10+ states) leading to unnecessary re-renders
-2. **Excessive Persistence**: Stores recommendations in localStorage for unauthenticated users, creating overhead
-3. **Race Conditions**: Complex effect dependencies and session tracking trying to prevent race conditions
-4. **Inefficient Caching**: Storing and retrieving recommendations based on watch history hash is overly complex
-5. **Too Many Effect Dependencies**: Multiple effects with complex dependency arrays causing cascade updates
+### 1.1 Create New Preprocessing Script (`scripts/preprocess.py`)
+- Input: `data/anime_catalog.json`, user ratings data
+- Output: Enhanced processed datasets and mappings
 
-## Implementation Plan
+#### Key Features to Add:
+1. **Anime Relationships Processing**
+   - Create relationship graph embeddings
+   - Weight relationships by type:
+     - Sequel/Prequel: Highest weight
+     - Side Story/Spin-off: Medium weight
+     - Other relationships: Lower weight
+   - Generate relationship adjacency matrix
 
-### Step 1: Redesign the Hook's Core Architecture ✅
-- [x] Remove localStorage persistence for unauthenticated users
-- [x] Generate recommendations on-demand rather than caching extensively
-- [x] Simplify state to essential variables only
-- [x] Consolidate related state into single objects where possible
+2. **Studio Information Processing**
+   - Create studio embeddings
+   - Handle multiple studios per anime
+   - Normalize studio influence
+   - Create studio-anime mapping matrix
 
-### Step 2: Rewrite the Hook Implementation ✅
-- [x] Rewrite the hook with a leaner state model focused on:
-  - Basic states: recommendations, loading, error
-  - Authentication-aware operations without complex persistence
-  - Simpler watch history tracking with minimal local state
-- [x] Use a request-based model instead of effect-based recommendation generation
-- [x] Eliminate the watch history hash system for unauthenticated users
-- [x] Retain persistence only for authenticated users via database
+3. **Enhanced Tag Processing**
+   - Incorporate tag ranks and categories
+   - Create weighted tag embeddings
+   - Normalize tag importance
 
-### Step 3: Update Interface with Context ✅
-- [x] Ensure the hook still provides all necessary data/methods to the RecommendationsContext
-- [x] Update return values to maintain compatibility
-- [x] Remove unnecessary debug information or make it opt-in
-- [x] Maintain public API compatibility where needed
-
-### Step 4: Test and Verify Performance
-- [ ] Verify the hook works with both authenticated and unauthenticated flows
-- [ ] Confirm recommendations are still properly generated
-- [ ] Test that authentication transitions work smoothly
-- [ ] Compare performance metrics before and after the change
-
-## Expected Outcome
-
-The rewritten hook should:
-- Be approximately 1/3 the size of the current implementation
-- Have fewer state variables and simpler effect patterns
-- Eliminate race conditions through simpler architecture
-- Provide faster user experience by generating recommendations on-demand
-- Maintain all functionality for authenticated users while simplifying unauthenticated flow
-
-## Implementation Notes
-
-The rewritten hook has successfully:
-1. Reduced the state variables by consolidating related state into a single status object
-2. Eliminated the sessionIdRef and race condition prevention mechanisms in favor of simpler state management
-3. Removed localStorage persistence for unauthenticated users while maintaining database persistence for authenticated users
-4. Simplified the watch history tracking by removing the complex hash-based change detection system
-5. Implemented a cleaner request-based model for recommendation generation
-
-The hook is now more maintainable and should perform faster, especially for unauthenticated users who will no longer experience the overhead of localStorage operations for recommendations.
-
-## Testing Instructions
-
-### 1. Testing Environment Setup
-```bash
-# Start the development server
-npm run dev
+### 1.2 Data Structure Updates
+```python
+# Example processed anime metadata structure
+{
+    "anime_id": str,
+    "relationship_indices": List[int],  # Indices of related anime
+    "relationship_weights": List[float],  # Weights based on relationship type
+    "studio_indices": List[int],  # Studio indices
+    "studio_weights": List[float],  # Normalized studio weights
+    "tag_indices": List[int],
+    "tag_weights": List[float],  # Based on rank/category
+    "genre_indices": List[int],
+    "popularity_score": float,  # Normalized popularity
+    "average_score": float  # Normalized score
+}
 ```
 
-### 2. Test for Unauthenticated User Flow
-1. Open the application in an incognito/private window
-2. Add a few anime titles to your watch history
-3. Navigate to the Recommendations page
-4. Click "Generate Recommendations" button
-5. Verify recommendations appear correctly
-6. Refresh the page and verify that:
-   - Watch history is still available (from localStorage)
-   - Recommendations need to be regenerated (should not be persisted)
+## 2. Model Architecture Updates (`scripts/train_model.py`)
 
-### 3. Test for Authenticated User Flow
-1. Log in to the application
-2. Add a few anime titles to your watch history
-3. Navigate to the Recommendations page
-4. Generate recommendations
-5. Refresh the page and verify that:
-   - Watch history persists
-   - Recommendations are loaded from the database (should not need regeneration)
+### 2.1 Enhanced Model Architecture
+```python
+class ImprovedAnimeRecommenderModel(nn.Module):
+    def __init__(self):
+        # Existing embeddings
+        self.user_embedding = nn.Embedding(n_users, 64)
+        self.anime_embedding = nn.Embedding(n_anime, 128)
+        self.genre_embedding = nn.Embedding(n_genres + 1, 32)
+        self.tag_embedding = nn.Embedding(n_tags + 1, 32)
+        
+        # New embeddings
+        self.studio_embedding = nn.Embedding(n_studios + 1, 16)
+        self.relationship_embedding = nn.Embedding(n_anime, 32)
+        
+        # Enhanced attention mechanisms
+        self.genre_attention = nn.MultiheadAttention(32, 4)
+        self.tag_attention = nn.MultiheadAttention(32, 4)
+        self.studio_attention = nn.MultiheadAttention(16, 2)
+        self.relationship_attention = nn.MultiheadAttention(32, 4)
+        
+        # Updated MLP for combined features
+        self.mlp = nn.Sequential(
+            nn.Linear(64 + 128 + 32 + 32 + 16 + 32, 256),
+            # ... rest of MLP layers
+        )
+```
 
-### 4. Test Authentication Transitions
-1. Start as an unauthenticated user with watch history and recommendations
-2. Log in to the application
-3. Verify that:
-   - Watch history is properly transferred/merged if applicable
-   - New recommendations can be generated
-4. Log out of the application
-5. Verify that the state is properly reset
+### 2.2 Training Parameter Updates
+- Increase batch size for larger dataset (512 or 1024)
+- Adjust learning rate schedule
+- Update early stopping patience
+- Modify gradient clipping values
 
-### 5. Performance Metrics to Check
-1. Load time of the Recommendations page
-2. Time to generate recommendations
-3. Responsiveness during recommendations generation
-4. Memory usage (check using browser dev tools)
+## 3. Implementation Steps
 
-### 6. Edge Cases to Test
-1. Generate recommendations with an empty watch history
-2. Generate recommendations with a very large watch history
-3. Test with network throttling to simulate slower connections
-4. Test rapid authentication state changes
+### Phase 1: Data Preprocessing
+1. Implement new preprocessing script
+2. Generate enhanced datasets
+3. Validate data quality and distributions
+4. Create new mapping files
 
-## Next Steps
+### Phase 2: Model Enhancement
+1. Update model architecture
+2. Modify training pipeline
+3. Implement new loss functions
+4. Add validation metrics
 
-After testing is complete:
-1. If any issues are found, address them while maintaining the simplified architecture
-2. Consider further optimizations to the recommendation algorithm if needed
-3. Update documentation to reflect the new implementation
-4. Apply similar simplification approaches to other complex parts of the application 
+### Phase 3: Training and Validation
+1. Train model with new features
+2. Validate performance improvements
+3. Fine-tune hyperparameters
+4. Generate performance metrics
+
+### Phase 4: Deployment Updates
+1. Export enhanced model to ONNX
+2. Update model mappings
+3. Update metadata files
+4. Validate inference performance
+
+## 4. File Changes Summary
+
+### New Files:
+- `scripts/preprocess.py` (new preprocessing script)
+
+### Modified Files:
+- `scripts/train_model.py` (enhanced model architecture)
+- `data/processed/*` (all processed data files)
+- `public/model/anime_recommender/*` (all deployment files)
+
+### Generated Files:
+- `data/processed/train_ratings.csv`
+- `data/processed/val_ratings.csv`
+- `data/processed/test_ratings.csv`
+- `data/processed/model_config.json`
+- `data/processed/anime_metadata.json`
+- `data/processed/mappings.pkl`
+- `public/model/anime_recommender/model.onnx`
+- `public/model/anime_recommender/model_mappings.json`
+- `public/model/anime_recommender/onnx_model_metadata.json`
+
+## 5. Execution Commands
+
+```bash
+# 1. Preprocess data with new features
+python scripts/preprocess.py --input-dir data --output-dir data/processed --min-ratings 10
+
+# 2. Train enhanced model
+python scripts/train_model.py --data-dir data/processed --output-dir data/model/pytorch --batch-size 512 --epochs 50
+
+# 3. Convert and deploy model
+python scripts/convert_to_onnx.py --model-dir data/model/pytorch --output-dir public/model/anime_recommender
+```
+
+## 6. Success Metrics
+- Improved recommendation accuracy (MAE, MSE)
+- Better handling of series/related anime
+- Maintained or improved inference speed
+- Reasonable model size for web deployment
+
+## 7. Rollback Plan
+- Maintain copy of current model and mappings
+- Version control for all code changes
+- Automated tests for new features
+- Performance comparison benchmarks

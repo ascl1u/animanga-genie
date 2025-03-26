@@ -89,9 +89,15 @@ class SupabaseLoader:
             "popularity": anime.get("popularity"),
             "format": anime.get("format"),
             "episodes": anime.get("episodes"),
+            "duration": anime.get("duration"),
+            "status": anime.get("status"),
             "year": anime.get("year"),
             "description": anime.get("description"),
-            "image_url": anime.get("image_url")
+            "image_url": anime.get("image_url", ""),
+            "relations": json.dumps(anime.get("relations", [])),
+            "studios": json.dumps(anime.get("studios", [])),
+            "created_at": "now()",
+            "updated_at": "now()"
         }
     
     def insert_anime_batch(self, anime_batch: List[Dict[str, Any]]) -> bool:
@@ -119,9 +125,41 @@ class SupabaseLoader:
                 print(f"Response: {e.response.text}")
             return False
     
-    def load_to_supabase(self) -> None:
+    def upsert_anime_batch(self, anime_batch: List[Dict[str, Any]]) -> bool:
+        """
+        Upsert (update or insert) a batch of anime records into Supabase.
+        
+        Args:
+            anime_batch: List of formatted anime dictionaries
+            
+        Returns:
+            Success status (True if successful)
+        """
+        try:
+            # Use upsert with on_conflict=anilist_id to update existing records
+            headers = self.headers.copy()
+            headers["Prefer"] = "resolution=merge-duplicates"
+            
+            response = requests.post(
+                f"{self.rest_url}/anime",
+                headers=headers,
+                json=anime_batch
+            )
+            
+            response.raise_for_status()
+            return True
+        except requests.RequestException as e:
+            print(f"Error upserting batch: {e}")
+            if hasattr(e.response, 'text'):
+                print(f"Response: {e.response.text}")
+            return False
+    
+    def load_to_supabase(self, upsert: bool = True) -> None:
         """
         Load all anime data into Supabase in batches.
+        
+        Args:
+            upsert: Whether to use upsert (update if exists) instead of insert
         """
         anime_data = self.load_anime_data()
         print(f"Loaded {len(anime_data)} anime entries from JSON file")
@@ -135,13 +173,20 @@ class SupabaseLoader:
             batch = anime_data[i:i + self.batch_size]
             formatted_batch = [self.format_anime_for_supabase(anime) for anime in batch]
             
-            print(f"Inserting batch {i//self.batch_size + 1}/{(total_anime + self.batch_size - 1)//self.batch_size}...")
+            print(f"Processing batch {i//self.batch_size + 1}/{(total_anime + self.batch_size - 1)//self.batch_size}...")
             
-            if self.insert_anime_batch(formatted_batch):
-                success_count += len(batch)
-                print(f"Successfully inserted {len(batch)} anime records")
+            if upsert:
+                success = self.upsert_anime_batch(formatted_batch)
+                operation = "upserted"
             else:
-                print(f"Failed to insert batch starting at index {i}")
+                success = self.insert_anime_batch(formatted_batch)
+                operation = "inserted"
+                
+            if success:
+                success_count += len(batch)
+                print(f"Successfully {operation} {len(batch)} anime records")
+            else:
+                print(f"Failed to {operation} batch starting at index {i}")
                 
             processed += len(batch)
             print(f"Progress: {processed}/{total_anime} ({processed/total_anime*100:.1f}%)")
@@ -149,7 +194,7 @@ class SupabaseLoader:
             # Avoid rate limiting
             time.sleep(1)
         
-        print(f"Data loading complete. {success_count}/{total_anime} anime records inserted successfully.")
+        print(f"Data loading complete. {success_count}/{total_anime} anime records {operation} successfully.")
 
 
 def main():
@@ -157,11 +202,12 @@ def main():
     parser = argparse.ArgumentParser(description="Load anime data to Supabase")
     parser.add_argument("--data-dir", default="data", help="Directory where JSON data is stored")
     parser.add_argument("--batch-size", type=int, default=50, help="Number of records to insert in a single batch")
+    parser.add_argument("--upsert", action="store_true", help="Use upsert instead of insert (update if exists)")
     
     args = parser.parse_args()
     
     loader = SupabaseLoader(data_dir=args.data_dir, batch_size=args.batch_size)
-    loader.load_to_supabase()
+    loader.load_to_supabase(upsert=args.upsert)
     
     print("Anime data loading to Supabase completed!")
 

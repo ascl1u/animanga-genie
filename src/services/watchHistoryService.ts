@@ -13,6 +13,20 @@ export const notifyWatchHistoryChanged = () => {
   window.dispatchEvent(event);
 };
 
+// Add these type definitions at the top of the file, after the imports
+interface GraphQLError {
+  message?: string;
+  extensions?: {
+    code?: string;
+    retryAfter?: number;
+  };
+}
+
+interface ApolloError {
+  graphQLErrors?: GraphQLError[];
+  message?: string;
+}
+
 /**
  * Get all watch history items for the current user
  */
@@ -182,6 +196,8 @@ export const importAnilistWatchHistory = async (username: string): Promise<{
   updated: number;
   unchanged: number;
   total: number;
+  rateLimited?: boolean;
+  retryAfter?: number;
 }> => {
   try {
     // Get current authenticated user
@@ -198,141 +214,176 @@ export const importAnilistWatchHistory = async (username: string): Promise<{
     
     // Get the user's anime list from AniList
     const { getUserAnimeList } = await import('@/utils/anilistClient');
-    const anilistLists = await getUserAnimeList(username);
     
-    if (!anilistLists || anilistLists.length === 0) {
-      throw new Error('No anime lists found for this AniList user');
-    }
-    
-    // Get existing watch history
-    const existingHistory = await getUserWatchHistory();
-    const existingMap = new Map<number, AnimeWatchHistoryItem>();
-    existingHistory.forEach(item => existingMap.set(item.anilist_id, item));
-    
-    // Track statistics
-    let added = 0;
-    let updated = 0;
-    let unchanged = 0;
-    let total = 0;
-    
-    // Prepare items to be added/updated
-    const itemsToProcess = [];
-    
-    // Process each list (Completed, Watching, etc.)
-    for (const list of anilistLists) {
-      // Skip empty lists
-      if (!list.entries || list.entries.length === 0) continue;
+    try {
+      // Call the AniList API (which now has rate limit handling)
+      const anilistLists = await getUserAnimeList(username);
       
-      // Process each entry in the list
-      for (const entry of list.entries) {
-        total++;
-        const media = entry.media;
+      if (!anilistLists || anilistLists.length === 0) {
+        throw new Error('No anime lists found for this AniList user');
+      }
+      
+      // Get existing watch history
+      const existingHistory = await getUserWatchHistory();
+      const existingMap = new Map<number, AnimeWatchHistoryItem>();
+      existingHistory.forEach(item => existingMap.set(item.anilist_id, item));
+      
+      // Track statistics
+      let added = 0;
+      let updated = 0;
+      let unchanged = 0;
+      let total = 0;
+      
+      // Prepare items to be added/updated
+      const itemsToProcess = [];
+      
+      // Process each list (Completed, Watching, etc.)
+      for (const list of anilistLists) {
+        // Skip empty lists
+        if (!list.entries || list.entries.length === 0) continue;
         
-        // Default NULL scores to 5, or use existing score if valid
-        // AniList returns scores from 1-10, matching our system
-        // If score is null or 0, we'll use 5 as a default neutral rating
-        const rating = entry.score ? entry.score : 5;
-        
-        // Create watch history item
-        const watchItem: WatchHistoryFormData = {
-          anilist_id: media.id,
-          title: media.title.english || media.title.romaji,
-          // Only include cover image if it's a known safe domain
-          cover_image: media.coverImage?.medium?.includes('s4.anilist.co') 
-            ? media.coverImage.medium 
-            : undefined,
-          rating // Use the calculated rating
+        // Process each entry in the list
+        for (const entry of list.entries) {
+          total++;
+          const media = entry.media;
+          
+          // Default NULL scores to 5, or use existing score if valid
+          // AniList returns scores from 1-10, matching our system
+          // If score is null or 0, we'll use 5 as a default neutral rating
+          const rating = entry.score ? entry.score : 5;
+          
+          // Create watch history item
+          const watchItem: WatchHistoryFormData = {
+            anilist_id: media.id,
+            title: media.title.english || media.title.romaji,
+            // Only include cover image if it's a known safe domain
+            cover_image: media.coverImage?.medium?.includes('s4.anilist.co') 
+              ? media.coverImage.medium 
+              : undefined,
+            rating // Use the calculated rating
+          };
+          
+          // Check if this anime already exists in the user's watch history
+          const existing = existingMap.get(media.id);
+          
+          // Always process all entries - we're always overwriting
+          if (existing) {
+            // If this is an update to an existing entry
+            if (existing.rating !== rating) {
+              watchItem.id = existing.id; // Keep the same ID for updating
+              itemsToProcess.push(watchItem);
+              updated++;
+            } else {
+              unchanged++;
+            }
+          } else {
+            // This is a new entry
+            itemsToProcess.push(watchItem);
+            added++;
+          }
+        }
+      }
+      
+      // Now perform the database operations
+      if (itemsToProcess.length > 0) {
+        // Generate UUID function - use the same format as Supabase
+        const generateUUID = () => {
+          // Simple UUID v4 implementation
+          return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            const r = Math.random() * 16 | 0;
+            const v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+          });
         };
         
-        // Check if this anime already exists in the user's watch history
-        const existing = existingMap.get(media.id);
+        // Add user_id and required fields to all items
+        const itemsWithUserId = itemsToProcess.map(item => ({
+          ...item,
+          user_id: user.id,
+          // Ensure ID is always present for new items
+          id: item.id || generateUUID(),
+          // Add timestamps to ensure required fields are present
+          created_at: item.id ? undefined : new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }));
         
-        // Always process all entries - we're always overwriting
-        if (existing) {
-          // If this is an update to an existing entry
-          if (existing.rating !== rating) {
-            watchItem.id = existing.id; // Keep the same ID for updating
-            itemsToProcess.push(watchItem);
-            updated++;
-          } else {
-            unchanged++;
-          }
-        } else {
-          // This is a new entry
-          itemsToProcess.push(watchItem);
-          added++;
+        // Process items in smaller batches to avoid payload size issues
+        const BATCH_SIZE = 5; // Reduced batch size further to minimize potential issues
+        const batches = [];
+        
+        for (let i = 0; i < itemsWithUserId.length; i += BATCH_SIZE) {
+          batches.push(itemsWithUserId.slice(i, i + BATCH_SIZE));
         }
-      }
-    }
-    
-    // Now perform the database operations
-    if (itemsToProcess.length > 0) {
-      // Generate UUID function - use the same format as Supabase
-      const generateUUID = () => {
-        // Simple UUID v4 implementation
-        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-          const r = Math.random() * 16 | 0;
-          const v = c === 'x' ? r : (r & 0x3 | 0x8);
-          return v.toString(16);
-        });
-      };
-      
-      // Add user_id and required fields to all items
-      const itemsWithUserId = itemsToProcess.map(item => ({
-        ...item,
-        user_id: user.id,
-        // Ensure ID is always present for new items
-        id: item.id || generateUUID(),
-        // Add timestamps to ensure required fields are present
-        created_at: item.id ? undefined : new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }));
-      
-      // Process items in smaller batches to avoid payload size issues
-      const BATCH_SIZE = 5; // Reduced batch size further to minimize potential issues
-      const batches = [];
-      
-      for (let i = 0; i < itemsWithUserId.length; i += BATCH_SIZE) {
-        batches.push(itemsWithUserId.slice(i, i + BATCH_SIZE));
-      }
-      
-      console.log(`Processing ${itemsWithUserId.length} items in ${batches.length} batches`);
-      
-      // Process each batch
-      for (const batch of batches) {
-        try {
-          // Log each batch for debugging
-          console.log('Processing batch:', JSON.stringify(batch));
-          
-          const { error } = await supabase
-            .from('anime_watch_history')
-            .upsert(batch, {
-              onConflict: 'user_id,anilist_id', // Define the conflict resolution strategy
-              ignoreDuplicates: false           // Update existing records
-            });
-          
-          if (error) {
-            console.error('Error during AniList import batch operation:', error);
+        
+        console.log(`Processing ${itemsWithUserId.length} items in ${batches.length} batches`);
+        
+        // Process each batch
+        for (const batch of batches) {
+          try {
+            // Log each batch for debugging
+            console.log('Processing batch:', JSON.stringify(batch));
+            
+            const { error } = await supabase
+              .from('anime_watch_history')
+              .upsert(batch, {
+                onConflict: 'user_id,anilist_id', // Define the conflict resolution strategy
+                ignoreDuplicates: false           // Update existing records
+              });
+            
+            if (error) {
+              console.error('Error during AniList import batch operation:', error);
+              throw error;
+            }
+          } catch (error) {
+            console.error('Batch processing error:', error);
+            console.error('Problematic batch data:', JSON.stringify(batch, null, 2));
             throw error;
           }
-        } catch (error) {
-          console.error('Batch processing error:', error);
-          console.error('Problematic batch data:', JSON.stringify(batch, null, 2));
-          throw error;
         }
       }
+      
+      // Notify that watch history has changed
+      notifyWatchHistoryChanged();
+      
+      // Return statistics about the operation
+      return {
+        added,
+        updated,
+        unchanged,
+        total
+      };
+    } catch (error: unknown) {
+      const apolloError = error as ApolloError;
+      
+      // Check if this is a rate limit error
+      if (
+        apolloError.graphQLErrors?.some((e: GraphQLError) => 
+          e.extensions?.code === 'RATE_LIMITED'
+        ) ||
+        (apolloError.message && (
+          apolloError.message.includes('rate limit') || 
+          apolloError.message.includes('too many requests') ||
+          apolloError.message.includes('AniList API rate limit reached')
+        ))
+      ) {
+        // Get retry time if available
+        const retryAfter = apolloError.graphQLErrors?.[0]?.extensions?.retryAfter || 60;
+        console.log(`[ANILIST] Import hit rate limit. Need to wait ${retryAfter} seconds.`);
+        
+        // Return special response indicating rate limit was hit
+        return {
+          added: 0,
+          updated: 0,
+          unchanged: 0,
+          total: 0,
+          rateLimited: true,
+          retryAfter
+        };
+      }
+      
+      // Rethrow other errors
+      throw error;
     }
-    
-    // Notify that watch history has changed
-    notifyWatchHistoryChanged();
-    
-    // Return statistics about the operation
-    return {
-      added,
-      updated,
-      unchanged,
-      total
-    };
   } catch (error) {
     console.error('Error in importAnilistWatchHistory:', error);
     throw error;

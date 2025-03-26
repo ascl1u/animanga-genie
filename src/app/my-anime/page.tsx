@@ -65,7 +65,26 @@ export default function MyAnimePage() {
         </div>
         
         {/* Import Options - Only show for authenticated users */}
-        {isAuthenticated && <WatchHistoryImport />}
+        {isAuthenticated ? (
+          <WatchHistoryImport />
+        ) : (
+          <div className="bg-white rounded-lg shadow p-4 mb-6">
+            <h2 className="text-xl font-semibold text-gray-900">Import Watch History</h2>
+            <div className="mt-2 text-sm text-gray-700">
+              <p>
+                Want to import your anime watch history from AniList?{' '}
+                <Link href="/signup" className="font-medium text-indigo-600 hover:text-indigo-500">
+                  Sign up
+                </Link>{' '}
+                or{' '}
+                <Link href="/login" className="font-medium text-indigo-600 hover:text-indigo-500">
+                  log in
+                </Link>{' '}
+                to access this feature.
+              </p>
+            </div>
+          </div>
+        )}
         
         {/* Watch History Form */}
         <WatchHistoryForm onAnimeAdded={handleAnimeAdded} />

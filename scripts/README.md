@@ -99,37 +99,7 @@ python scripts/train_model.py --data-dir data/processed --output-dir data/model 
 - Creates model mappings and metadata for client-side use
 
 ## Model Conversion Script
-
-### 1. convert_model_for_web.py
-
-This script optimizes and packages the trained model for web deployment with TensorFlow.js.
-
-**Usage:**
-```bash
-python scripts/convert_model_for_web.py --model-dir data/model --output-dir public/model --quantize
-```
-
-**Arguments:**
-- `--model-dir`: Directory containing the trained model (default: "data/model")
-- `--output-dir`: Directory to save the converted model (default: "public/model")
-- `--quantize`: Quantize the model for size reduction (optional)
-
-**Output:**
-- Optimized TensorFlow.js model files for client-side inference
-- Helper JavaScript file for making recommendations
-- Simplified anime lookup data for the web application
-
-## Database Scripts
-
-### 1. update_anime_table.sql
-
-SQL script to update the structure of the anime table in Supabase.
-
-**Usage:**
-1. Go to the Supabase dashboard for your project
-2. Navigate to the SQL Editor
-3. Copy and paste the contents of this file
-4. Run the query
+convert_to_onnx.py
 
 ### 2. load_anime_to_supabase.py
 
@@ -170,7 +140,7 @@ python scripts/load_anime_to_supabase.py --data-dir data --batch-size 50
 
 4. Convert model for web use:
    ```bash
-   python scripts/convert_model_for_web.py --quantize
+   python scripts/convert_to_onnx.py
    ```
 
 This complete pipeline collects data, trains a neural recommendation model, and prepares it for client-side deployment with TensorFlow.js.

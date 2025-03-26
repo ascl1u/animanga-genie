@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
 import { importAnilistWatchHistory } from '@/services/watchHistoryService';
 import { Dialog } from '@/components/ui/Dialog';
@@ -12,12 +12,36 @@ export default function WatchHistoryImport() {
   const [isImportingAnilist, setIsImportingAnilist] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [rateLimited, setRateLimited] = useState(false);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
   const [importResults, setImportResults] = useState<{
     added: number;
     updated: number;
     unchanged: number;
     total: number;
   } | null>(null);
+
+  // Effect for handling cooldown countdown
+  useEffect(() => {
+    let countdownTimer: NodeJS.Timeout | null = null;
+    
+    if (rateLimited && cooldownSeconds > 0) {
+      countdownTimer = setInterval(() => {
+        setCooldownSeconds(prev => {
+          const newValue = prev - 1;
+          if (newValue <= 0) {
+            setRateLimited(false);
+            return 0;
+          }
+          return newValue;
+        });
+      }, 1000);
+    }
+    
+    return () => {
+      if (countdownTimer) clearInterval(countdownTimer);
+    };
+  }, [rateLimited, cooldownSeconds]);
 
   const handleMalImport = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,6 +68,20 @@ export default function WatchHistoryImport() {
     try {
       // Call the service to import watch history from AniList
       const results = await importAnilistWatchHistory(anilistUsername);
+      
+      // Check if we hit a rate limit
+      if (results.rateLimited) {
+        const retryAfter = results.retryAfter || 60;
+        setRateLimited(true);
+        setCooldownSeconds(retryAfter);
+        
+        toast.error(`AniList API rate limit reached. Please try again in ${retryAfter} seconds.`, {
+          duration: Math.min(retryAfter * 1000, 5000) // Show for max 5 seconds
+        });
+        
+        // Don't update import results since import didn't complete
+        return;
+      }
       
       // Show success message with stats
       toast.success(`Successfully synced ${results.total} anime from AniList!`);
@@ -161,11 +199,21 @@ export default function WatchHistoryImport() {
               />
               <button
                 onClick={startAnilistImport}
-                disabled={isImportingAnilist || !anilistUsername.trim()}
+                disabled={isImportingAnilist || !anilistUsername.trim() || rateLimited}
                 className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isImportingAnilist ? 'Importing...' : 'Import from AniList'}
+                {isImportingAnilist 
+                  ? 'Importing...' 
+                  : rateLimited 
+                    ? `Retry in ${cooldownSeconds}s` 
+                    : 'Import from AniList'}
               </button>
+              
+              {rateLimited && (
+                <div className="text-sm text-amber-700">
+                  AniList API rate limit reached. Please wait before trying again.
+                </div>
+              )}
               
               {importResults && (
                 <div className="mt-2 text-sm">

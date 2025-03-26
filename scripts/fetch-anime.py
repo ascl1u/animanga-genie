@@ -22,7 +22,7 @@ class AnimeDataFetcher:
     for use in our recommendation system training.
     """
     
-    def __init__(self, output_dir: str = "data", page_size: int = 50):
+    def __init__(self, output_dir: str = "data", page_size: int = 100):
         """
         Initialize the AnimeDataFetcher.
         
@@ -66,16 +66,45 @@ class AnimeDataFetcher:
                     tags {
                         id
                         name
+                        rank
                         category
                     }
                     averageScore
                     popularity
                     format
                     episodes
+                    duration
+                    status
                     seasonYear
                     description
                     coverImage {
                         medium
+                        large
+                    }
+                    relations {
+                        edges {
+                            id
+                            relationType
+                            node {
+                                id
+                                title {
+                                    romaji
+                                    english
+                                }
+                                type
+                                format
+                            }
+                        }
+                    }
+                    studios {
+                        edges {
+                            id
+                            isMain
+                            node {
+                                id
+                                name
+                            }
+                        }
                     }
                 }
             }
@@ -131,14 +160,18 @@ class AnimeDataFetcher:
                     "native": anime["title"]["native"]
                 },
                 "genres": anime["genres"],
-                "tags": [tag["name"] for tag in anime["tags"] if tag["name"]],
+                "tags": anime["tags"],  # Keep full tag objects with rank and category
                 "rating": anime["averageScore"] / 10.0,  # Convert to 0-10 scale
                 "popularity": anime["popularity"],
                 "format": anime["format"],
                 "episodes": anime["episodes"],
+                "duration": anime["duration"],
+                "status": anime["status"],
                 "year": anime["seasonYear"],
                 "description": anime["description"],
-                "image_url": anime["coverImage"]["medium"]
+                "image_url": anime["coverImage"]["medium"] or "",
+                "relations": anime["relations"]["edges"] if anime.get("relations") else [],
+                "studios": anime["studios"]["edges"] if anime.get("studios") else []
             }
             processed_anime.append(processed_entry)
             
@@ -157,6 +190,7 @@ class AnimeDataFetcher:
         page = 1
         has_next_page = True
         total_collected = 0
+        empty_pages_in_a_row = 0  # Track consecutive empty pages
         
         while has_next_page and page <= max_pages:
             print(f"Fetching page {page}...")
@@ -170,6 +204,19 @@ class AnimeDataFetcher:
             try:
                 page_info = response["data"]["Page"]["pageInfo"]
                 anime_page = self.process_anime_data(response)
+                
+                # Check if the page yielded no anime
+                if len(anime_page) == 0:
+                    empty_pages_in_a_row += 1
+                    print(f"Page {page} yielded 0 anime. Empty pages in a row: {empty_pages_in_a_row}")
+                    
+                    # Early stop if we have 5 empty pages in a row
+                    if empty_pages_in_a_row >= 5:
+                        print(f"Detected {empty_pages_in_a_row} empty pages in a row. Early stopping to avoid wasting API calls.")
+                        break
+                else:
+                    # Reset counter when we find anime
+                    empty_pages_in_a_row = 0
                 
                 self.anime_data.extend(anime_page)
                 total_collected += len(anime_page)
@@ -186,6 +233,16 @@ class AnimeDataFetcher:
                 print(f"Error processing page {page}: {e}")
                 page += 1
         
+        if empty_pages_in_a_row >= 5:
+            print("Script ended early due to lack of new anime data.")
+            if total_collected > 0:
+                self.save_to_json() # Make sure to save what we've got
+                print(f"Saved {total_collected} anime entries despite early termination.")
+        elif page > max_pages:
+            print(f"Reached maximum page limit of {max_pages}.")
+        else:
+            print("No more pages to fetch.")
+            
         return self.anime_data
     
     def save_to_json(self, filename: str = "anime_catalog.json") -> None:
@@ -207,8 +264,8 @@ def main():
     """Execute the anime data fetching process."""
     parser = argparse.ArgumentParser(description="Fetch anime data from AniList API")
     parser.add_argument("--output-dir", default="data", help="Directory to store output files")
-    parser.add_argument("--page-size", type=int, default=50, help="Number of anime per page")
-    parser.add_argument("--max-pages", type=int, default=100, help="Maximum number of pages to fetch")
+    parser.add_argument("--page-size", type=int, default=100, help="Number of anime per page")
+    parser.add_argument("--max-pages", type=int, default=500, help="Maximum number of pages to fetch")
     
     args = parser.parse_args()
     

@@ -25,13 +25,17 @@ Stores anime information from external sources like AniList.
 | title        | jsonb (not null)      | Contains title in different forms  |
 | rating       | double precision      | Average rating                     |
 | genres       | jsonb                 | Array of genres                    |
-| tags         | jsonb                 | Array of tags                      |
+| tags         | jsonb                 | Array of tags with rank and category |
 | popularity   | integer               | Popularity score                   |
 | format       | text                  | Format (TV, Movie, etc.)           |
 | episodes     | integer               | Number of episodes                 |
+| duration     | integer               | Episode duration in minutes        |
+| status       | text                  | Airing status (FINISHED, RELEASING, etc.) |
 | year         | integer               | Release year                       |
 | description  | text                  | Anime description                  |
 | image_url    | text                  | URL to cover image                 |
+| relations    | jsonb                 | Related anime (sequels, prequels, etc.) |
+| studios      | jsonb                 | Studios that produced the anime    |
 | created_at   | timestamptz           | Creation timestamp                 |
 | updated_at   | timestamptz           | Last update timestamp              |
 
@@ -221,6 +225,38 @@ const { data, error } = await supabase
   .single();
 ```
 
+### Fetching Anime with Relations
+```typescript
+const { data, error } = await supabase
+  .from('anime')
+  .select('*')
+  .eq('anilist_id', animeId)
+  .single();
+
+// Parse JSON fields
+if (data) {
+  const anime = {
+    id: data.anilist_id,
+    title: JSON.parse(data.title),
+    genres: JSON.parse(data.genres),
+    tags: JSON.parse(data.tags),
+    coverImage: {
+      medium: data.image_url,
+      large: data.image_url
+    },
+    relations: data.relations ? JSON.parse(data.relations) : [],
+    studios: data.studios ? JSON.parse(data.studios) : [],
+    // Other fields don't need parsing
+    format: data.format,
+    episodes: data.episodes,
+    duration: data.duration,
+    status: data.status,
+    year: data.year,
+    description: data.description
+  };
+}
+```
+
 ## Security Improvements
 
 The following security improvements have been implemented:
@@ -240,6 +276,25 @@ The following security improvements have been implemented:
 - Recommendations are stored as JSONB arrays in the `recommendations` field.
 - The `watch_history_hash` field helps determine if recommendations need to be regenerated based on watch history changes.
 - Service role operations are now logged for auditing purposes.
+
+## Anime Schema Updates
+
+The anime table has been enhanced with additional fields to support our recommendation engine:
+
+1. **Enhanced Media Information**:
+   - Added `duration` and `status` fields to provide more detailed information
+   - Retained `image_url` as a text field for simplicity and compatibility
+   - Enhanced `tags` to include rank and category information for better recommendation filtering
+
+2. **Related Content**:
+   - Added `relations` field to store connections between anime (sequels, prequels, spin-offs)
+   - Added `studios` field to enable studio-based recommendations
+
+3. **Field Type Standardization**:
+   - Ensured all complex fields are stored as JSONB for consistency and query performance
+   - Standardized timestamps with `created_at` and `updated_at` fields
+
+These schema changes allow our recommendation engine to generate more accurate suggestions based on detailed anime metadata, relationships between shows, and production information.
 
 ## Polls Database Setup
 

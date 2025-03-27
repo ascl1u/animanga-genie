@@ -14,13 +14,18 @@ interface AnimeRecommenderMetadata {
   n_anime: number;
   n_genres: number;
   n_tags: number;
+  n_studios: number;
   user_embedding_dim: number;
   anime_embedding_dim: number;
   genre_embedding_dim: number;
   tag_embedding_dim: number;
+  studio_embedding_dim: number;
+  relation_embedding_dim: number;
   dense_layers: number[];
   max_genres: number;
   max_tags: number;
+  max_studios: number;
+  max_relations: number;
   model_type: string;
   rating_normalization: {
     mean: number;
@@ -246,7 +251,11 @@ export class OnnxModelService {
     userIdx: number,
     animeIdx: number,
     genreIndices: number[],
-    tagIndices: number[]
+    tagIndices: number[],
+    studioIndices: number[] = [],
+    studioWeights: number[] = [],
+    relationIndices: number[] = [],
+    relationWeights: number[] = []
   ): Promise<number> {
     if (!this.session || !this.metadata) {
       throw new Error('Model not loaded or metadata missing');
@@ -258,11 +267,17 @@ export class OnnxModelService {
         animeIdx,
         genreIndices: genreIndices.length,
         tagIndices: tagIndices.length,
+        studioIndices: studioIndices.length,
+        relationIndices: relationIndices.length
       });
       
-      // Pad genre and tag indices if needed
+      // Pad arrays if needed
       const paddedGenreIndices = this.padArray(genreIndices, this.metadata.max_genres, -1);
       const paddedTagIndices = this.padArray(tagIndices, this.metadata.max_tags, -1);
+      const paddedStudioIndices = this.padArray(studioIndices, this.metadata.max_studios, -1);
+      const paddedStudioWeights = this.padArray(studioWeights, this.metadata.max_studios, 0);
+      const paddedRelationIndices = this.padArray(relationIndices, this.metadata.max_relations, -1);
+      const paddedRelationWeights = this.padArray(relationWeights, this.metadata.max_relations, 0);
 
       // Create input tensors
       console.log('Creating input tensors...');
@@ -279,6 +294,26 @@ export class OnnxModelService {
           paddedTagIndices.map(idx => BigInt(idx)),
           [1, this.metadata.max_tags]
         ),
+        studio_indices: new ort.Tensor(
+          'int64',
+          paddedStudioIndices.map(idx => BigInt(idx)),
+          [1, this.metadata.max_studios]
+        ),
+        studio_weights: new ort.Tensor(
+          'float32',
+          paddedStudioWeights,
+          [1, this.metadata.max_studios]
+        ),
+        relation_indices: new ort.Tensor(
+          'int64',
+          paddedRelationIndices.map(idx => BigInt(idx)),
+          [1, this.metadata.max_relations]
+        ),
+        relation_weights: new ort.Tensor(
+          'float32',
+          paddedRelationWeights,
+          [1, this.metadata.max_relations]
+        )
       };
 
       // Run inference
@@ -294,8 +329,11 @@ export class OnnxModelService {
       const rating = normalizedRating * this.metadata.rating_normalization.std + 
                     this.metadata.rating_normalization.mean;
       
-      console.log('Prediction result:', rating);
-      return rating;
+      // Normalize to 0-1 range (assuming ratings are 1-10)
+      const normalizedScore = Math.max(0, Math.min(1, (rating - 1) / 9));
+      
+      console.log('Prediction result:', rating, 'Normalized score:', normalizedScore);
+      return normalizedScore;
     } catch (error) {
       console.error('ONNX inference error:', error);
       throw error;

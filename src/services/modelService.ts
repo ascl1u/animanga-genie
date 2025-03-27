@@ -186,40 +186,51 @@ export async function preloadModel(): Promise<void> {
 
 /**
  * Run inference with the model - adapter for the ONNX model service
- * This provides compatibility with the older interface
+ * This provides compatibility with the older interface while supporting enhanced features
  */
 export async function runModelInference(
-    userIdx: number,
-    animeIndices: number[],
-    genreIndices: number[],
-    tagIndices: number[]
-  ): Promise<number[]> {
-    if (!onnxModelService.isModelLoaded()) {
-      await onnxModelService.initModel();
-    }
-    
-    console.log(`[DEBUG] Starting inference for ${animeIndices.length} anime indices`);
-    
-    // Run inference for each anime index sequentially instead of with Promise.all
-    const ratings: number[] = [];
-    
-    for (let i = 0; i < animeIndices.length; i++) {
-      const animeIdx = animeIndices[i];
-      console.log(`[DEBUG] Starting inference for anime index ${animeIdx} (${i+1}/${animeIndices.length})`);
-      
-      try {
-        const rating = await onnxModelService.runInference(
-          userIdx, animeIdx, genreIndices, tagIndices
-        );
-        ratings.push(rating);
-        console.log(`[DEBUG] Completed inference for anime index ${animeIdx}: rating = ${rating}`);
-      } catch (error) {
-        console.error(`[DEBUG] Error during inference for anime index ${animeIdx}:`, error);
-        // Push a default low rating to maintain array length
-        ratings.push(-1);
-      }
-    }
-    
-    console.log(`[DEBUG] Completed all inferences, got ${ratings.length} ratings`);
-    return ratings;
+  userIdx: number,
+  animeIndices: number[],
+  genreIndices: number[],
+  tagIndices: number[],
+  studioIndices: number[] = [],
+  studioWeights: number[] = [],
+  relationIndices: number[] = [],
+  relationWeights: number[] = []
+): Promise<number[]> {
+  if (!onnxModelService.isModelLoaded()) {
+    await onnxModelService.initModel();
   }
+  
+  console.log(`[DEBUG] Starting inference for ${animeIndices.length} anime indices`);
+  
+  // Run inference for each anime index sequentially instead of with Promise.all
+  const ratings: number[] = [];
+  
+  for (let i = 0; i < animeIndices.length; i++) {
+    const animeIdx = animeIndices[i];
+    console.log(`[DEBUG] Starting inference for anime index ${animeIdx} (${i+1}/${animeIndices.length})`);
+    
+    try {
+      const rating = await onnxModelService.runInference(
+        userIdx,
+        animeIdx,
+        genreIndices,
+        tagIndices,
+        studioIndices,
+        studioWeights,
+        relationIndices,
+        relationWeights
+      );
+      ratings.push(rating);
+      console.log(`[DEBUG] Completed inference for anime index ${animeIdx}: rating = ${rating}`);
+    } catch (error) {
+      console.error(`[DEBUG] Error during inference for anime index ${animeIdx}:`, error);
+      // Push a default low rating to maintain array length
+      ratings.push(-1);
+    }
+  }
+  
+  console.log(`[DEBUG] Completed all inferences, got ${ratings.length} ratings`);
+  return ratings;
+}

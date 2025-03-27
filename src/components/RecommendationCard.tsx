@@ -16,7 +16,9 @@ export default function RecommendationCard({
   const displayScore = anime.averageScore 
     ? (anime.averageScore / 10).toFixed(1) // Convert from 0-100 to 0-10 scale
     : (anime.score * 10).toFixed(1); // Convert from 0-1 to 0-10 scale
-  const recommendationPercentage = (anime.score * 100).toFixed(1);
+  
+  // anime.score is now normalized to 0-1 range
+  const recommendationPercentage = Math.min(100, Math.max(0, (anime.score * 100))).toFixed(1);
   
   return (
     <div className="bg-white rounded-lg shadow overflow-hidden h-full flex flex-col">

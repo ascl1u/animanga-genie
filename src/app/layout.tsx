@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import ClientNavigation from '@/components/ClientNavigation';
+import Footer from '@/components/Footer';
 import { SimpleAuthProvider } from '@/components/SimpleAuthProvider';
 import { Toaster } from 'react-hot-toast';
 import { ModelProvider } from '@/context/ModelContext';
@@ -35,15 +36,16 @@ export default function RootLayout({
       <head>
         <link rel="icon" href="/favicon.ico" />
       </head>
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col min-h-screen`}>
         <SimpleAuthProvider>
           <ModelProvider>
             <RecommendationsProvider>
               <ClientNavigation />
               <Toaster position="top-right" />
-              <main>
+              <main className="flex-grow">
                 {children}
               </main>
+              <Footer />
             </RecommendationsProvider>
           </ModelProvider>
         </SimpleAuthProvider>

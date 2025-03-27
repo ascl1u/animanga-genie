@@ -126,6 +126,7 @@ export const GET_USER_ANIME_LIST_QUERY = gql`
             }
             coverImage {
               medium
+              large
             }
           }
         }
@@ -209,6 +210,7 @@ export interface AnilistUserAnimeEntry {
     };
     coverImage: {
       medium: string;
+      large: string;
     };
   };
 }

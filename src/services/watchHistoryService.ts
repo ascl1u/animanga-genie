@@ -257,8 +257,8 @@ export const importAnilistWatchHistory = async (username: string): Promise<{
             anilist_id: media.id,
             title: media.title.english || media.title.romaji,
             // Only include cover image if it's a known safe domain
-            cover_image: media.coverImage?.medium?.includes('s4.anilist.co') 
-              ? media.coverImage.medium 
+            cover_image: media.coverImage?.large?.includes('s4.anilist.co') 
+              ? media.coverImage.large 
               : undefined,
             rating // Use the calculated rating
           };

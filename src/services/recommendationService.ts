@@ -1277,13 +1277,13 @@ export async function getRecommendations(
                 });
               }
               
-              // Create the enriched result with debug info
+              // Create the enriched recommendation with full details
               enrichedResults.push({
                 id: result.anilistId,
                 title: details.title.english || details.title.romaji || `Anime ${result.anilistId}`,
                 score: result.score,
                 averageScore: details.averageScore,
-                cover_image: details.coverImage.large || details.coverImage.medium,
+                cover_image: details.coverImage.large, // Always use large URL
                 genres: details.genres,
                 description: details.description,
                 _debugInfo: {
@@ -1298,8 +1298,12 @@ export async function getRecommendations(
                   }
                 }
               });
+              
+              console.log(`[RECOMMENDATION] Enriched result for ${details.title.english || details.title.romaji} (${result.anilistId}), score: ${result.score.toFixed(4)}`);
             } else {
-              // If we couldn't get details, still include the basic info
+              // If we can't get details, add with limited info
+              console.log(`[RECOMMENDATION] Warning: Could not get details for anime ${result.anilistId}`);
+              
               enrichedResults.push({
                 id: result.anilistId,
                 title: `Anime ${result.anilistId}`,
@@ -1317,9 +1321,9 @@ export async function getRecommendations(
               });
             }
           } catch (error) {
-            console.error(`[RECOMMENDATION] Error fetching details for anime ${result.anilistId}:`, error);
+            console.error(`[RECOMMENDATION] Error enriching recommendation for anime ${result.anilistId}:`, error);
             
-            // Even if we have an error, still add a basic entry
+            // Add with minimal info even if there's an error
             enrichedResults.push({
               id: result.anilistId,
               title: `Anime ${result.anilistId}`,

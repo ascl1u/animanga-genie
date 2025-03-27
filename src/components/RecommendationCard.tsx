@@ -1,5 +1,6 @@
 import { AnimeData } from '@/services/recommendationService';
 import Image from 'next/image';
+import { useState } from 'react';
 
 interface RecommendationCardProps {
   anime: AnimeData;
@@ -12,6 +13,8 @@ export default function RecommendationCard({
   onLike,
   onDislike,
 }: RecommendationCardProps) {
+  const [showFullDescription, setShowFullDescription] = useState<boolean>(false);
+  
   // Format the scores
   const displayScore = anime.averageScore 
     ? (anime.averageScore / 10).toFixed(1) // Convert from 0-100 to 0-10 scale
@@ -20,17 +23,20 @@ export default function RecommendationCard({
   // anime.score is now normalized to 0-1 range
   const recommendationPercentage = Math.min(100, Math.max(0, (anime.score * 100))).toFixed(1);
   
+  // Format the description - remove HTML tags
+  const cleanDescription = anime.description?.replace(/<[^>]*>/g, '') || '';
+  
   return (
     <div className="bg-white rounded-lg shadow overflow-hidden h-full flex flex-col">
-      <div className="h-56 bg-gray-200 relative">
+      <div className="h-64 bg-gray-200 relative rounded-t-lg overflow-hidden">
         {anime.cover_image ? (
           <Image 
-            src={anime.cover_image} 
+            src={anime.cover_image}
             alt={anime.title}
             fill
-            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 400px"
             className="object-contain"
-            quality={90}
+            quality={100}
             priority
           />
         ) : (
@@ -71,13 +77,20 @@ export default function RecommendationCard({
           </div>
         )}
         
-        {/* Description */}
-        {anime.description && (
+        {/* Description with expand/collapse toggle */}
+        {cleanDescription && (
           <div className="mt-2 mb-3">
-            <p className="text-sm text-gray-700 line-clamp-4">{
-              // Remove HTML tags if present
-              anime.description.replace(/<[^>]*>/g, '')
-            }</p>
+            <p className={`text-sm text-gray-700 ${!showFullDescription ? 'line-clamp-4' : ''}`}>
+              {cleanDescription}
+            </p>
+            {cleanDescription.length > 300 && (
+              <button 
+                onClick={() => setShowFullDescription(!showFullDescription)}
+                className="text-indigo-600 text-xs mt-1 hover:text-indigo-800 focus:outline-none"
+              >
+                {showFullDescription ? 'Show less' : 'Read more'}
+              </button>
+            )}
           </div>
         )}
       </div>

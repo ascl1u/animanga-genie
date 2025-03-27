@@ -179,8 +179,8 @@ class AnimeDataService {
         genres: genres,
         tags: tags,
         coverImage: {
-          medium: anime.image_url || '',
-          large: anime.image_url || ''
+          medium: anime.image_url,
+          large: anime.image_url // Since we store large URL, use it for both
         },
         format: anime.format,
         seasonYear: anime.year,
@@ -431,7 +431,7 @@ class AnimeDataService {
         status: anime.status,
         year: anime.seasonYear,
         description: anime.description,
-        image_url: anime.coverImage.medium,
+        image_url: anime.coverImage.large, // Always use large image URL
         relations: anime.relations ? JSON.stringify(anime.relations.edges) : null,
         studios: anime.studios ? JSON.stringify(anime.studios.edges) : null
       };

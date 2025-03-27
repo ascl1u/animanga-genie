@@ -38,15 +38,7 @@ export default async function PollsPage() {
               href={`/polls/${poll.id}`}
               className="block p-6 bg-white rounded-lg border border-gray-200 shadow-md hover:bg-gray-100 transition-colors"
             >
-              <h2 className="text-xl font-semibold mb-3 text-gray-900">{poll.question}</h2>
-              <p className="text-sm text-gray-600">
-                {poll.options.length} options • Created {new Date(poll.created_at).toLocaleDateString()}
-              </p>
-              <div className="mt-4">
-                <span className="inline-block px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
-                  Vote Now
-                </span>
-              </div>
+              <h2 className="text-xl font-semibold text-gray-900">{poll.question}</h2>
             </Link>
           ))}
         </div>
